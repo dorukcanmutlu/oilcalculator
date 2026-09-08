@@ -41,6 +41,7 @@
   function current() { return Store.filter(range); }
 
   function renderAll() {
+    renderVehicles();
     renderStats();
     renderList();
     renderStations();
@@ -104,7 +105,8 @@
     let list = current().slice().sort(SORTS[$('#sortSelect').value] || SORTS['date-desc']);
     if (fuel) list = list.filter(r => r.fuel === fuel);
     if (q) list = list.filter(r => (r.station + ' ' + r.note + ' ' + r.fuel).toLocaleLowerCase('tr').includes(q));
-    const issueMap = new Map(Store.anomalies(list).map(x => [x.rec.id, x.issues]));
+    const tankSize = Store.activeVehicle()?.tankSize;
+    const issueMap = new Map(Store.anomalies(list, { tankSize }).map(x => [x.rec.id, x.issues]));
     $('#recordList').innerHTML = list.map(r =>
       rowHTML(r, { actions: true, pick: bulkMode, issues: issueMap.get(r.id) })).join('');
     $('#listEmpty').hidden = list.length > 0;
@@ -264,7 +266,7 @@
 
   /** Uzun süre ya da çok kayıt boyunca yedek alınmadıysa Özet'te hatırlatır. */
   function renderBackupBanner() {
-    const count = Store.all().length;
+    const count = Store.allRecords().length;
     const m = Store.meta();
     const banner = $('#backupBanner');
     if (!count) { banner.hidden = true; return; }
@@ -280,13 +282,91 @@
   }
 
   function markBackedUp() {
-    Store.setMeta({ lastBackupAt: new Date().toISOString(), lastBackupCount: Store.all().length });
+    Store.setMeta({ lastBackupAt: new Date().toISOString(), lastBackupCount: Store.allRecords().length });
     renderBackupBanner();
   }
 
   $('#backupNowBtn').addEventListener('click', () => {
     show('veri');
     $('#exportJsonBtn').click();
+  });
+
+  /* ---------- Araçlar ---------- */
+
+  function renderVehicles() {
+    const list = Store.vehicles();
+    const active = Store.activeVehicle();
+    document.body.classList.toggle('multi-vehicle', list.length > 1);
+    $('#vehiclePicker').hidden = list.length < 2;
+    $('#vehicleSelect').innerHTML = list.map(v =>
+      `<option value="${U.esc(v.id)}" ${active && v.id === active.id ? 'selected' : ''}>${U.esc(v.name)}</option>`).join('');
+    $('#importTarget').textContent = active ? `“${active.name}” aracına` : 'aktif araca';
+
+    $('#vehicleList').innerHTML = list.length ? list.map(v => `
+      <li data-id="${U.esc(v.id)}">
+        <div class="rec-main">${U.esc(v.name)}${v.plate ? ` <span style="color:var(--muted);font-weight:500">· ${U.esc(v.plate)}</span>` : ''}</div>
+        <div class="rec-sub">${U.esc(v.fuel)}${v.tankSize ? ` · ${U.n0.format(v.tankSize)} L depo` : ''} · ${U.n0.format(Store.recordCount(v.id))} kayıt</div>
+        <div class="rec-amount">${active && v.id === active.id ? '<span style="color:var(--accent);font-size:12px">aktif</span>' : ''}</div>
+        <div class="rec-actions">
+          ${active && v.id === active.id ? '' : '<button class="v-use">Bu araca geç</button>'}
+          <button class="v-edit">Düzenle</button>
+          <button class="v-del del">Sil</button>
+        </div>
+      </li>`).join('') : '<li class="empty">Henüz araç yok. Aşağıdan ekle.</li>';
+  }
+
+  function resetVehicleForm() {
+    $('#v-id').value = ''; $('#v-name').value = ''; $('#v-plate').value = '';
+    $('#v-tank').value = ''; $('#v-fuel').value = 'Motorin';
+    $('#vehicleSaveBtn').textContent = 'Araç ekle';
+    $('#vehicleCancelBtn').hidden = true;
+  }
+
+  $('#vehicleForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const editing = !!$('#v-id').value;
+    Store.saveVehicle({
+      id: $('#v-id').value || undefined,
+      name: $('#v-name').value,
+      plate: $('#v-plate').value,
+      tankSize: $('#v-tank').value,
+      fuel: $('#v-fuel').value
+    });
+    resetVehicleForm();
+    renderVehicles(); renderAll();
+    toast(editing ? 'Araç güncellendi' : 'Araç eklendi');
+  });
+
+  $('#vehicleCancelBtn').addEventListener('click', resetVehicleForm);
+
+  $('#vehicleSelect').addEventListener('change', e => {
+    Store.setActive(e.target.value);
+    renderVehicles(); renderAll(); resetForm();
+    toast(`${Store.activeVehicle().name} aracına geçildi`);
+  });
+
+  $('#vehicleList').addEventListener('click', e => {
+    const li = e.target.closest('li[data-id]');
+    if (!li) return;
+    const id = li.dataset.id;
+    if (e.target.classList.contains('v-use')) {
+      Store.setActive(id);
+      renderVehicles(); renderAll(); resetForm();
+      toast(`${Store.activeVehicle().name} aracına geçildi`);
+    } else if (e.target.classList.contains('v-edit')) {
+      const v = Store.vehicles().find(x => x.id === id);
+      $('#v-id').value = v.id; $('#v-name').value = v.name; $('#v-plate').value = v.plate;
+      $('#v-tank').value = v.tankSize ?? ''; $('#v-fuel').value = v.fuel;
+      $('#vehicleSaveBtn').textContent = 'Aracı güncelle';
+      $('#vehicleCancelBtn').hidden = false;
+    } else if (e.target.classList.contains('v-del')) {
+      const n = Store.recordCount(id);
+      const v = Store.vehicles().find(x => x.id === id);
+      if (!confirm(`“${v.name}” aracı ve ona bağlı ${n} kayıt silinecek. Devam?`)) return;
+      Store.removeVehicle(id);
+      renderVehicles(); renderAll();
+      toast('Araç silindi');
+    }
   });
 
   /* ---------- Form ---------- */
@@ -368,7 +448,8 @@
     if (!U.parseNumber(rec.total) && !U.parseNumber(rec.liters)) return toast('Tutar ya da litre gir');
 
     // Şüpheli girişlerde bir kez uyar, ikinci basışta kaydet
-    const warnings = Store.validate({ ...rec, id: F.id.value || 'yeni' });
+    const warnings = Store.validate({ ...rec, id: F.id.value || 'yeni' },
+      { tankSize: Store.activeVehicle()?.tankSize });
     const key = JSON.stringify(rec);
     if (warnings.length && warnKey !== key) {
       warnKey = key;
@@ -578,9 +659,10 @@
 
   /* ---------- Dışa aktarma ---------- */
   $('#exportCsvBtn').addEventListener('click', () => {
-    const rows = [['Tarih', 'Kilometre', 'Litre', 'Birim fiyat', 'Tutar', 'Yakıt', 'İstasyon', 'Tam depo', 'Not']];
-    for (const r of Store.all()) {
-      rows.push([r.date, r.odo ?? '', r.liters ?? '', r.unitPrice ?? '', r.total ?? '', r.fuel, r.station, r.full ? 'Evet' : 'Hayır', r.note]);
+    const names = new Map(Store.vehicles().map(v => [v.id, v.name]));
+    const rows = [['Araç', 'Tarih', 'Kilometre', 'Litre', 'Birim fiyat', 'Tutar', 'Yakıt', 'İstasyon', 'Tam depo', 'Not']];
+    for (const r of Store.allRecords()) {
+      rows.push([names.get(r.vehicleId) || '', r.date, r.odo ?? '', r.liters ?? '', r.unitPrice ?? '', r.total ?? '', r.fuel, r.station, r.full ? 'Evet' : 'Hayır', r.note]);
     }
     const csv = '﻿' + rows.map(r => r.map(c => {
       const s = String(c ?? '').replace(/\./g, ',');
@@ -591,7 +673,7 @@
   });
 
   $('#exportJsonBtn').addEventListener('click', () => {
-    U.download(`yakit-yedek-${U.todayISO()}.json`, JSON.stringify(Store.all(), null, 2), 'application/json');
+    U.download(`yakit-yedek-${U.todayISO()}.json`, JSON.stringify(Store.exportAll(), null, 2), 'application/json');
     markBackedUp();
   });
 
@@ -601,11 +683,12 @@
     if (!file) return;
     try {
       const data = JSON.parse(await file.text());
-      if (!Array.isArray(data)) throw new Error('Geçersiz yedek dosyası');
-      if (!confirm(`${data.length} kayıt geri yüklenecek, mevcut kayıtların yerine geçecek. Devam?`)) return;
-      Store.replaceAll(data);
-      renderAll(); renderStations();
-      toast(`${data.length} kayıt geri yüklendi`);
+      const count = Array.isArray(data) ? data.length : data?.records?.length;
+      if (!count) throw new Error('Yedek dosyasında kayıt yok');
+      if (!confirm(`${count} kayıt geri yüklenecek, mevcut tüm veriler silinecek. Devam?`)) return;
+      const n = Store.importAll(data);
+      renderVehicles(); renderAll(); renderStations(); resetForm();
+      toast(`${n} kayıt geri yüklendi`);
     } catch (err) {
       toast('Yedek okunamadı');
     } finally { e.target.value = ''; }
@@ -621,7 +704,8 @@
   });
 
   $('#clearBtn').addEventListener('click', () => {
-    if (!confirm('Tüm kayıtlar kalıcı olarak silinecek. Emin misin?')) return;
+    const av = Store.activeVehicle();
+    if (!confirm(`${av ? `“${av.name}” aracının` : 'Tüm'} kayıtları kalıcı olarak silinecek. Emin misin?`)) return;
     Store.clear(); renderAll();
     toast('Tüm kayıtlar silindi');
   });
@@ -650,6 +734,8 @@
 
   /* ---------- Başlangıç ---------- */
   Store.load();
+  renderVehicles();
+  resetVehicleForm();
   resetForm();
   renderAll();
   const start = (location.hash || '').replace('#', '');

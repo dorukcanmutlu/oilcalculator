@@ -17,6 +17,10 @@
 
 <header class="topbar">
   <h1 id="viewTitle">Yakıt Takip</h1>
+  <div class="range" id="vehiclePicker" hidden>
+    <label class="sr-only" for="vehicleSelect">Araç</label>
+    <select id="vehicleSelect"></select>
+  </div>
   <div class="range">
     <label class="sr-only" for="rangeSelect">Dönem</label>
     <select id="rangeSelect">
@@ -243,8 +247,46 @@
   <!-- VERİ -->
   <section class="view" id="view-veri" hidden>
     <div class="card">
+      <h2>Araçlar</h2>
+      <ul class="records" id="vehicleList"></ul>
+      <form class="form" id="vehicleForm" autocomplete="off">
+        <input type="hidden" id="v-id">
+        <div class="grid">
+          <label class="field">
+            <span>Araç adı</span>
+            <input type="text" id="v-name" placeholder="örn. Passat" required>
+          </label>
+          <label class="field">
+            <span>Plaka</span>
+            <input type="text" id="v-plate" placeholder="isteğe bağlı">
+          </label>
+        </div>
+        <div class="grid">
+          <label class="field">
+            <span>Depo hacmi (L)</span>
+            <input type="number" id="v-tank" inputmode="decimal" step="1" min="0" placeholder="örn. 60">
+          </label>
+          <label class="field">
+            <span>Yakıt türü</span>
+            <select id="v-fuel">
+              <option>Motorin</option>
+              <option>Benzin</option>
+              <option>LPG</option>
+              <option>Elektrik</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn primary" id="vehicleSaveBtn">Araç ekle</button>
+          <button type="button" class="btn ghost" id="vehicleCancelBtn" hidden>Vazgeç</button>
+        </div>
+      </form>
+      <p class="hint">Depo hacmini girersen, hacmi aşan litre girişlerinde uyarır.</p>
+    </div>
+
+    <div class="card">
       <h2>Excel / CSV içe aktar</h2>
-      <p class="hint">.xlsx, .xls veya .csv dosyanı seç, sonra sütunları eşleştir.</p>
+      <p class="hint">.xlsx veya .csv dosyanı seç, sonra sütunları eşleştir. Kayıtlar <b id="importTarget">aktif araca</b> eklenir.</p>
       <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.txt">
       <div id="mapArea" hidden>
         <div class="grid" id="mapFields"></div>
@@ -283,7 +325,7 @@
       </div>
     </div>
 
-    <p class="foot">Veriler yalnızca bu cihazın tarayıcısında saklanır. Telefon değiştirirken JSON yedeği al.</p>
+    <p class="foot">Veriler yalnızca bu cihazın tarayıcısında saklanır. JSON yedeği tüm araçları içerir; telefon değiştirirken onu al.</p>
   </section>
 </main>
 

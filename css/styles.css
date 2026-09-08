@@ -66,8 +66,13 @@ h2 small { color: var(--muted); font-weight: 500; }
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
 }
-.topbar h1 { font-size: 17px; }
-.range select { max-width: 150px; }
+.topbar h1 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.multi-vehicle .topbar h1 { display: none; }
+body.multi-vehicle .topbar { gap: 8px; }
+body.multi-vehicle .topbar select { font-size: 13px; padding: 9px 8px; }
+.vehicle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.range { min-width: 0; }
+.range select { max-width: 100%; }
 
 main { padding: 14px 12px 24px; max-width: 760px; margin: 0 auto; }
 .view { display: flex; flex-direction: column; gap: 12px; }

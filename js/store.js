@@ -16,6 +16,10 @@ const Store = (() => {
     return next;
   }
 
+  const VEHICLE_KEY = 'yakit-takip:vehicles';
+  let vehicleList = [];
+  let activeId = null;
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -25,10 +29,88 @@ const Store = (() => {
       console.warn('Kayıtlar okunamadı', e);
       records = [];
     }
+    try {
+      vehicleList = JSON.parse(localStorage.getItem(VEHICLE_KEY)) || [];
+      if (!Array.isArray(vehicleList)) vehicleList = [];
+    } catch (e) { vehicleList = []; }
+
     records = records.map(normalize).filter(r => r.date);
     sort();
-    return records;
+    migrateVehicles();
+    activeId = vehicleList.some(v => v.id === meta().activeVehicle)
+      ? meta().activeVehicle
+      : (vehicleList[0]?.id || null);
+    return all();
   }
+
+  /** Araçsız kurulumdan çoklu araca geçiş: mevcut kayıtlar varsayılan araca bağlanır. */
+  function migrateVehicles() {
+    const orphan = records.some(r => !r.vehicleId);
+    if (!vehicleList.length && (records.length || orphan)) {
+      vehicleList = [{ id: U.uid(), name: 'Aracım', plate: '', tankSize: null, fuel: records[0]?.fuel || 'Motorin' }];
+      saveVehicles();
+    }
+    if (orphan && vehicleList.length) {
+      const id = vehicleList[0].id;
+      records = records.map(r => (r.vehicleId ? r : { ...r, vehicleId: id }));
+      save();
+    }
+  }
+
+  /** Kayıt eklenirken hiç araç yoksa varsayılanı oluşturur. */
+  function ensureVehicle(fuel) {
+    if (vehicleList.length) {
+      if (!activeId) setActive(vehicleList[0].id);
+      return activeVehicle();
+    }
+    const v = { id: U.uid(), name: 'Aracım', plate: '', tankSize: null, fuel: fuel || 'Motorin' };
+    vehicleList.push(v);
+    saveVehicles();
+    setActive(v.id);
+    return v;
+  }
+
+  function saveVehicles() {
+    try { localStorage.setItem(VEHICLE_KEY, JSON.stringify(vehicleList)); }
+    catch (e) { console.error('Araçlar yazılamadı', e); }
+  }
+
+  /* ---- Araçlar ---- */
+  const vehicles = () => vehicleList.slice();
+  const activeVehicle = () => vehicleList.find(v => v.id === activeId) || null;
+
+  function setActive(id) {
+    if (!vehicleList.some(v => v.id === id)) return null;
+    activeId = id;
+    setMeta({ activeVehicle: id });
+    return activeVehicle();
+  }
+
+  function saveVehicle(v) {
+    const rec = {
+      id: v.id || U.uid(),
+      name: (v.name || '').trim() || 'Araç',
+      plate: (v.plate || '').trim(),
+      tankSize: U.parseNumber(v.tankSize),
+      fuel: v.fuel || 'Motorin'
+    };
+    const i = vehicleList.findIndex(x => x.id === rec.id);
+    if (i >= 0) vehicleList[i] = rec; else vehicleList.push(rec);
+    saveVehicles();
+    if (!activeId) setActive(rec.id);
+    return rec;
+  }
+
+  /** Aracı ve ona bağlı kayıtları siler. */
+  function removeVehicle(id) {
+    vehicleList = vehicleList.filter(v => v.id !== id);
+    records = records.filter(r => r.vehicleId !== id);
+    saveVehicles(); save();
+    if (activeId === id) setActive(vehicleList[0]?.id || null);
+    return vehicleList.length;
+  }
+
+  const recordCount = id => records.filter(r => r.vehicleId === id).length;
 
   function save() {
     try {
@@ -44,6 +126,7 @@ const Store = (() => {
     const liters = num(r.liters), price = num(r.unitPrice), total = num(r.total);
     const out = {
       id: r.id || U.uid(),
+      vehicleId: r.vehicleId || activeId || null,
       date: U.parseDate(r.date),
       odo: num(r.odo),
       liters, unitPrice: price, total,
@@ -69,9 +152,13 @@ const Store = (() => {
   const sort = () => records.sort((a, b) => a.date === b.date ? (a.odo || 0) - (b.odo || 0) : a.date < b.date ? -1 : 1);
 
   /* ---- CRUD ---- */
-  const all = () => records.slice();
+  /** Aktif aracın kayıtları */
+  const all = () => (activeId ? records.filter(r => r.vehicleId === activeId) : records.slice());
+  /** Tüm araçların kayıtları (yedekleme/dışa aktarma için) */
+  const allRecords = () => records.slice();
 
   function upsert(rec) {
+    ensureVehicle(rec.fuel);
     const r = normalize(rec);
     const i = records.findIndex(x => x.id === r.id);
     if (i >= 0) records[i] = r; else records.push(r);
@@ -82,27 +169,64 @@ const Store = (() => {
     records = records.filter(r => r.id !== id);
     save();
   }
+  /** Aktif aracın kayıtlarının yerine geçer (diğer araçlara dokunmaz) */
   function replaceAll(list) {
-    records = list.map(normalize).filter(r => r.date);
+    ensureVehicle(list[0]?.fuel);
+    const others = activeId ? records.filter(r => r.vehicleId !== activeId) : [];
+    records = others.concat(list.map(normalize).filter(r => r.date));
     sort(); save();
   }
   function addMany(list) {
+    ensureVehicle(list[0]?.fuel);
     const added = list.map(normalize).filter(r => r.date);
     records = records.concat(added);
     sort(); save();
     return added.length;
   }
-  function clear() { records = []; save(); }
+  /** Aktif aracın kayıtlarını siler */
+  function clear() {
+    records = activeId ? records.filter(r => r.vehicleId !== activeId) : [];
+    save();
+  }
 
-  const stationsList = () => [...new Set(records.map(r => r.station).filter(Boolean))].sort();
+  const stationsList = () => [...new Set(all().map(r => r.station).filter(Boolean))].sort();
+
+  /** Tüm araçlar ve kayıtlarıyla tam yedek */
+  const exportAll = () => ({
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    vehicles: vehicleList,
+    records
+  });
+
+  /** Yedekten geri yükleme: hem eski dizi biçimini hem v2 nesnesini kabul eder. */
+  function importAll(data) {
+    if (Array.isArray(data)) {                    // v1: sadece kayıt dizisi
+      vehicleList = vehicleList.length ? vehicleList
+        : [{ id: U.uid(), name: 'Aracım', plate: '', tankSize: null, fuel: 'Motorin' }];
+      activeId = activeId || vehicleList[0].id;
+      records = data.map(r => normalize({ ...r, vehicleId: r.vehicleId || activeId })).filter(r => r.date);
+    } else if (data && Array.isArray(data.records)) {
+      vehicleList = Array.isArray(data.vehicles) && data.vehicles.length
+        ? data.vehicles
+        : [{ id: U.uid(), name: 'Aracım', plate: '', tankSize: null, fuel: 'Motorin' }];
+      activeId = vehicleList[0].id;
+      records = data.records.map(r => normalize({ ...r, vehicleId: r.vehicleId || activeId })).filter(r => r.date);
+    } else {
+      throw new Error('Yedek dosyası tanınmadı');
+    }
+    sort(); save(); saveVehicles(); setMeta({ activeVehicle: activeId });
+    return records.length;
+  }
 
   /* ---- Filtreleme ---- */
   function filter(range) {
     if (!range || range === 'all') return all();
+    const mine = all();                        // her zaman aktif aracın kayıtları
     if (typeof range === 'object') {           // { from, to } özel aralık
       const from = range.from || '0000-01-01';
       const to = range.to || '9999-12-31';
-      return records.filter(r => r.date >= from && r.date <= to);
+      return mine.filter(r => r.date >= from && r.date <= to);
     }
     const now = new Date();
     let from;
@@ -111,15 +235,15 @@ const Store = (() => {
       const d = new Date(now.getFullYear(), now.getMonth() - (Number(range) - 1), 1);
       from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
     }
-    return records.filter(r => r.date >= from);
+    return mine.filter(r => r.date >= from);
   }
 
   /** Kayıtlarda kullanılan yakıt türleri */
-  const fuels = () => [...new Set(records.map(r => r.fuel).filter(Boolean))].sort();
+  const fuels = () => [...new Set(all().map(r => r.fuel).filter(Boolean))].sort();
 
   /** Belirli bir tarihten önceki son kilometre kaydı */
   function lastOdoBefore(date, excludeId) {
-    const rows = records.filter(r => r.odo != null && r.id !== excludeId && (!date || r.date <= date));
+    const rows = all().filter(r => r.odo != null && r.id !== excludeId && (!date || r.date <= date));
     return rows.length ? rows[rows.length - 1] : null;
   }
 
@@ -140,7 +264,7 @@ const Store = (() => {
    */
   function validate(rec, { tankSize } = {}) {
     const r = normalize(rec);
-    const others = records.filter(x => x.id !== r.id);
+    const others = all().filter(x => x.id !== r.id);
     const out = [];
     if (!r.date) return [{ text: 'Tarih okunamadı' }];
     if (r.date > U.todayISO()) out.push({ text: 'Tarih ileri bir günde' });
@@ -396,5 +520,5 @@ const Store = (() => {
       .sort((a, b) => b.spend - a.spend);
   }
 
-  return { load, all, filter, upsert, remove, removeMany, replaceAll, addMany, clear, meta, setMeta, validate, anomalies, suggestPartial, setFull, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
+  return { load, all, allRecords, ensureVehicle, vehicles, activeVehicle, setActive, saveVehicle, removeVehicle, recordCount, exportAll, importAll, filter, upsert, remove, removeMany, replaceAll, addMany, clear, meta, setMeta, validate, anomalies, suggestPartial, setFull, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
 })();

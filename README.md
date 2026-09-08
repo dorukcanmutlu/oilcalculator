@@ -19,7 +19,14 @@ veriler telefonun tarayıcısında saklanır.
   (`.xlsx`, `.csv`). Başlık satırı ve sütunlar otomatik tahmin edilir; Türkçe
   sayı (`1.234,56`) ve tarih (`12.02.2025`) biçimleri ile Excel tarih hücreleri
   çözülür. Excel okuma uygulamanın içinde yazılı, dış kütüphane gerekmez.
-- **Yedekleme:** CSV / JSON dışa aktarma, JSON yedekten geri yükleme.
+- **Çoklu araç:** her araç için ayrı kilometre/tüketim hesabı, depo hacmi
+  bilgisi, tek dokunuşla araç değiştirme. Tek araç varken seçici görünmez.
+- **Giriş kontrolü:** geriye giden kilometre, aynı güne ikinci kayıt, tutarsız
+  tutar/litre/fiyat, aşırı fiyat sapması, mantıksız tüketim ve depo hacmini
+  aşan litre için kaydetmeden önce uyarı.
+- **Kısmi dolum düzeltmesi:** tam doldurulmamış alımları bulup toplu işaretler.
+- **Yedekleme:** CSV / JSON dışa aktarma, JSON yedekten geri yükleme, uzun süre
+  yedek alınmadıysa hatırlatma. JSON yedeği tüm araçları kapsar.
 - **Telefona kurulum:** PWA — ana ekrana eklenir, çevrimdışı çalışır.
 
 ## Yayına alma (GitHub Pages)
