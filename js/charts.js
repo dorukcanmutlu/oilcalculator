@@ -86,7 +86,7 @@ const Charts = (() => {
   }
 
   /** Çizgi grafiği (noktalı) */
-  function line(host, data, { fmt = String, fmtY = String, color = '--c2', zeroBased = false } = {}) {
+  function line(host, data, { fmt = String, fmtY = String, color = '--c2', zeroBased = false, area = false } = {}) {
     const pts = data.filter(d => d.value != null && isFinite(d.value));
     if (pts.length < 1) return empty(host);
     const cfg = frame(host);
@@ -116,6 +116,16 @@ const Charts = (() => {
       d += (started ? ' L' : ' M') + x(i) + ' ' + y(p.value);
       started = true;
     });
+    if (area) {
+      const pts2 = data.map((p, i) => ({ p, i })).filter(o => o.p.value != null && isFinite(o.p.value));
+      if (pts2.length > 1) {
+        const first = pts2[0], last = pts2[pts2.length - 1];
+        const fillPath = `M${x(first.i)} ${h - pad.b} ` +
+          pts2.map(o => `L${x(o.i)} ${y(o.p.value)}`).join(' ') +
+          ` L${x(last.i)} ${h - pad.b} Z`;
+        svg.appendChild(mk('path', { d: fillPath, fill: css(color), opacity: .14, stroke: 'none' }));
+      }
+    }
     svg.appendChild(mk('path', { d: d.trim(), fill: 'none', stroke: css(color), 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
     data.forEach((p, i) => {
       if (p.value == null || !isFinite(p.value)) return;

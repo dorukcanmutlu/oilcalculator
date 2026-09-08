@@ -5,13 +5,14 @@
   let parsed = null; // içe aktarma durumu: {rows, headerIdx, map}
 
   /* ---------- Görünüm yönetimi ---------- */
-  const TITLES = { ozet: 'Özet', ekle: 'Yakıt ekle', kayitlar: 'Kayıtlar', grafikler: 'Grafikler', veri: 'Veri' };
+  const TITLES = { ozet: 'Özet', ekle: 'Yakıt ekle', kayitlar: 'Kayıtlar', grafikler: 'Grafikler', analiz: 'Analiz', veri: 'Veri' };
   function show(view) {
     document.querySelectorAll('.view').forEach(v => v.hidden = v.id !== 'view-' + view);
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
     $('#viewTitle').textContent = TITLES[view] || 'Yakıt Takip';
     window.scrollTo({ top: 0 });
     if (view === 'grafikler') renderCharts();
+    if (view === 'analiz') renderAnalysis();
     location.hash = view;
   }
 
@@ -30,6 +31,7 @@
     renderList();
     renderStations();
     if (!$('#view-grafikler').hidden) renderCharts();
+    if (!$('#view-analiz').hidden) renderAnalysis();
   }
 
   function renderStats() {
@@ -114,6 +116,82 @@
       Charts.hbar($('#chartStations'), stationRows.map(s => ({ label: s.name, value: Math.round(s.spend) })),
         { fmt: U.moneyShort });
     }
+  }
+
+  function renderAnalysis() {
+    const list = current();
+    const a = Store.analysis(list);
+    const pct = v => (v == null ? '—' : (v >= 0 ? '+' : '') + U.n0.format(v * 100) + '%');
+
+    const cards = [
+      {
+        label: 'Günlük ortalama', value: a.perDay ? U.km(a.perDay.km) + '/gün' : '—',
+        sub: a.days ? `${U.n0.format(a.days)} günlük kayıt` : ''
+      },
+      {
+        label: 'Günlük yakıt gideri', value: a.perDay ? U.money(a.perDay.spend) : '—',
+        sub: a.yearly ? `12 ayda ≈ ${U.moneyShort(a.yearly.spend)}` : ''
+      },
+      {
+        label: 'Fiyat artışının faturası', value: a.extraCost ? U.money(a.extraCost) : '—',
+        sub: a.basePrice ? `İlk kayıttaki ₺${U.n2.format(a.basePrice)}/L fiyatına göre` : ''
+      },
+      {
+        label: 'Birim fiyat değişimi', value: pct(a.priceChange),
+        sub: (a.basePrice && a.lastPrice) ? `₺${U.n2.format(a.basePrice)} → ₺${U.n2.format(a.lastPrice)}/L` : ''
+      }
+    ];
+    $('#analysisStats').innerHTML = cards.map(c => `
+      <div class="stat">
+        <div class="label">${U.esc(c.label)}</div>
+        <div class="value">${U.esc(c.value)}</div>
+        <div class="sub">${U.esc(c.sub || '')}</div>
+      </div>`).join('');
+
+    const months = a.perMonth;
+    Charts.bar($('#chartCost100'), months.map(m => ({ label: U.monthLabel(m.ym), value: m.per100 ? Math.round(m.per100) : 0 })),
+      { fmt: U.money, fmtY: U.moneyShort, color: '--c1' });
+    $('#cost100Hint').textContent = a.lPer100
+      ? `Ortalama tüketimin (${U.n1.format(a.lPer100)} L/100km) o ayın birim fiyatıyla çarpımı.`
+      : 'Kilometre girilen kayıt olmadığı için hesaplanamıyor.';
+
+    Charts.bar($('#chartDistance'), months.map(m => ({ label: U.monthLabel(m.ym), value: m.km })),
+      { fmt: U.km, fmtY: v => U.n0.format(v), color: '--c2' });
+
+    Charts.line($('#chartPriceEffect'), a.priceEffect.map(p => ({ label: U.dateLabel(p.date).slice(0, 6), value: Math.round(p.value) })),
+      { fmt: U.money, fmtY: U.moneyShort, color: '--c5', zeroBased: true, area: true });
+    $('#priceEffectHint').textContent = a.basePrice
+      ? `Her dolumda, ilk kayıttaki ₺${U.n2.format(a.basePrice)}/L fiyatı yerine ödenen fazlanın toplamı.`
+      : 'Birim fiyat bilgisi olan kayıt gerekiyor.';
+
+    Charts.line($('#chartCumulative'), a.cumulativeSpend.map(p => ({ label: U.dateLabel(p.date).slice(0, 6), value: Math.round(p.value) })),
+      { fmt: U.money, fmtY: U.moneyShort, color: '--c3', zeroBased: true, area: true });
+
+    const rows = months.map(m => `
+      <tr>
+        <td>${U.esc(U.monthLabel(m.ym))}</td>
+        <td class="num">${U.esc(m.count ? U.n0.format(m.count) : '—')}</td>
+        <td class="num">${U.esc(m.km ? U.n0.format(m.km) : '—')}</td>
+        <td class="num">${U.esc(m.liters ? U.n1.format(m.liters) : '—')}</td>
+        <td class="num">${U.esc(m.avgPrice ? U.n2.format(m.avgPrice) : '—')}</td>
+        <td class="num">${U.esc(m.spend ? U.n0.format(m.spend) : '—')}</td>
+      </tr>`).join('');
+    const tot = months.reduce((t, m) => ({
+      count: t.count + m.count, km: t.km + m.km, liters: t.liters + m.liters, spend: t.spend + m.spend
+    }), { count: 0, km: 0, liters: 0, spend: 0 });
+    $('#monthTable').innerHTML = months.length ? `
+      <table>
+        <thead><tr><th>Ay</th><th class="num">Alım</th><th class="num">km</th><th class="num">Litre</th><th class="num">₺/L</th><th class="num">Harcama ₺</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td>Toplam</td>
+          <td class="num">${U.n0.format(tot.count)}</td>
+          <td class="num">${U.n0.format(tot.km)}</td>
+          <td class="num">${U.n1.format(tot.liters)}</td>
+          <td class="num">${tot.liters ? U.n2.format(tot.spend / tot.liters) : '—'}</td>
+          <td class="num">${U.n0.format(tot.spend)}</td>
+        </tr></tfoot>
+      </table>` : '<p class="empty">Bu dönemde kayıt yok.</p>';
   }
 
   /* ---------- Form ---------- */

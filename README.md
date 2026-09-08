@@ -12,6 +12,9 @@ veriler telefonun tarayıcısında saklanır.
   (L/100 km), km başına maliyet, toplam mesafe. Dönem seçilebilir (3 / 6 / 12 ay, bu yıl, tümü).
 - **Grafikler:** aylık harcama, birim fiyatın zaman içindeki seyri, tüketim,
   aylık litre, istasyon dağılımı.
+- **Analiz:** kayıtlardan türetilen veriler — 100 km sürmenin aylık maliyeti,
+  aylara dağıtılmış gidilen yol, fiyat artışının bugüne kadarki faturası,
+  kümülatif harcama, günlük km/gider ve 12 aylık tahmin, aylık özet tablosu.
 - **Excel / CSV içe aktarma:** kendi tablonu yükleyip sütunları eşleştirirsin
   (`.xlsx`, `.csv`). Başlık satırı ve sütunlar otomatik tahmin edilir; Türkçe
   sayı (`1.234,56`) ve tarih (`12.02.2025`) biçimleri ile Excel tarih hücreleri
@@ -62,6 +65,18 @@ Grafikte iki yöntem var:
   dolumların litresi de aralığa eklenir.
 
 Her iki durumda da kilometre girilmemiş kayıtlar hesaba katılmaz.
+
+## Analiz nasıl hesaplanıyor
+
+- **100 km'nin maliyeti:** ortalama tüketim (L/100 km) × o ayın ortalama birim
+  fiyatı. Tüketim sabitken maliyet artışının tamamen fiyattan geldiğini gösterir.
+- **Aylık gidilen yol:** iki dolum arasındaki kilometre farkı, aradaki günlere
+  eşit bölünüp aylara dağıtılır; aylık toplam, gerçek toplam mesafeye eşittir.
+- **Fiyat artışının faturası:** her dolumda `litre × (o günkü fiyat − ilk kayıttaki
+  fiyat)` toplanır. "Yakıtı hep ilk günkü fiyattan alsaydım ne kadar az öderdim"
+  sorusunun karşılığı.
+- **Günlük gider ve 12 aylık tahmin:** toplam harcama / kayıt aralığındaki gün
+  sayısı; tahmin bu günlük hızın 365 katı.
 
 ## Veriler nerede duruyor
 

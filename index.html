@@ -148,6 +148,39 @@
     </div>
   </section>
 
+  <!-- ANALİZ -->
+  <section class="view" id="view-analiz" hidden>
+    <div class="stats" id="analysisStats"></div>
+
+    <div class="card">
+      <h2>100 km sürmenin maliyeti <small>₺</small></h2>
+      <div class="chart" id="chartCost100"></div>
+      <p class="hint" id="cost100Hint"></p>
+    </div>
+
+    <div class="card">
+      <h2>Aylık gidilen yol <small>km</small></h2>
+      <div class="chart" id="chartDistance"></div>
+      <p class="hint">Dolumlar arası mesafe, aradaki günlere bölünerek aylara dağıtıldı.</p>
+    </div>
+
+    <div class="card">
+      <h2>Fiyat artışının faturası <small>₺</small></h2>
+      <div class="chart" id="chartPriceEffect"></div>
+      <p class="hint" id="priceEffectHint"></p>
+    </div>
+
+    <div class="card">
+      <h2>Kümülatif harcama <small>₺</small></h2>
+      <div class="chart" id="chartCumulative"></div>
+    </div>
+
+    <div class="card">
+      <h2>Aylık özet</h2>
+      <div class="preview" id="monthTable"></div>
+    </div>
+  </section>
+
   <!-- VERİ -->
   <section class="view" id="view-veri" hidden>
     <div class="card">
@@ -200,6 +233,7 @@
   <button class="tab" data-view="ekle"><svg viewBox="0 0 24 24"><path d="M11 5h2v14h-2z"/><path d="M5 11h14v2H5z"/></svg><span>Ekle</span></button>
   <button class="tab" data-view="kayitlar"><svg viewBox="0 0 24 24"><path d="M4 5h16v2H4zm0 6h16v2H4zm0 6h10v2H4z"/></svg><span>Kayıtlar</span></button>
   <button class="tab" data-view="grafikler"><svg viewBox="0 0 24 24"><path d="M4 19h16v2H4zM6 10h3v7H6zm5-5h3v12h-3zm5 8h3v4h-3z"/></svg><span>Grafik</span></button>
+  <button class="tab" data-view="analiz"><svg viewBox="0 0 24 24"><path d="M3.5 17.5 9 12l4 4 7.5-8.5-1.5-1.3L13 13l-4-4-7 7z"/><circle cx="9" cy="12" r="1.8"/><circle cx="13" cy="16" r="1.8"/></svg><span>Analiz</span></button>
   <button class="tab" data-view="veri"><svg viewBox="0 0 24 24"><path d="M12 3c-4.4 0-8 1.3-8 3v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0-1.7-3.6-3-8-3Zm6 15c0 .6-2.5 1.5-6 1.5S6 18.6 6 18v-2.3c1.5.8 3.7 1.3 6 1.3s4.5-.5 6-1.3V18Zm0-5c0 .6-2.5 1.5-6 1.5s-6-.9-6-1.5v-2.3c1.5.8 3.7 1.3 6 1.3s4.5-.5 6-1.3V13Zm-6-4.5c-3.5 0-6-.9-6-1.5s2.5-1.5 6-1.5 6 .9 6 1.5-2.5 1.5-6 1.5Z"/></svg><span>Veri</span></button>
 </nav>
 

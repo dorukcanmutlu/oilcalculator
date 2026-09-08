@@ -140,6 +140,77 @@ const Store = (() => {
     return out;
   }
 
+  /**
+   * Aylık gidilen km: iki dolum arasındaki mesafe, aradaki günlere eşit
+   * dağıtılarak aylara paylaştırılır (bir aralık iki aya taşabildiği için).
+   */
+  function monthlyDistance(list) {
+    const rows = list.filter(r => r.odo != null).slice()
+      .sort((a, b) => a.date === b.date ? a.odo - b.odo : a.date < b.date ? -1 : 1);
+    const map = new Map();
+    for (let i = 1; i < rows.length; i++) {
+      const km = rows[i].odo - rows[i - 1].odo;
+      if (!(km > 0)) continue;
+      const start = new Date(rows[i - 1].date + 'T00:00:00');
+      const days = Math.max(1, Math.round((new Date(rows[i].date + 'T00:00:00') - start) / 86400000));
+      for (let d = 1; d <= days; d++) {
+        const day = new Date(start.getTime() + d * 86400000);
+        const ym = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}`;
+        map.set(ym, (map.get(ym) || 0) + km / days);
+      }
+    }
+    return map;
+  }
+
+  /**
+   * Kayıtlardan türetilen analiz verileri: aylık mesafe ve 100 km maliyeti,
+   * kümülatif harcama, fiyat artışının getirdiği ek maliyet ve yıllık tahmin.
+   */
+  function analysis(list) {
+    const s = stats(list);
+    const km = monthlyDistance(list);
+    const perMonth = byMonth(list).map(m => {
+      const avgPrice = m.liters > 0 ? m.spend / m.liters : null;
+      return {
+        ym: m.ym, spend: m.spend, liters: m.liters, count: m.count,
+        km: Math.round(km.get(m.ym) || 0),
+        avgPrice,
+        // 100 km'nin maliyeti = (L/100km) × (₺/L)
+        per100: (avgPrice != null && s.lPer100 != null) ? s.lPer100 * avgPrice : null
+      };
+    });
+
+    // Kümülatif harcama
+    let run = 0;
+    const cumulativeSpend = list.map(r => ({ date: r.date, value: (run += (r.total || 0)) }));
+
+    // Fiyat artışının faturası: her dolumda ilk birim fiyata göre ödenen fazla
+    const priced = list.filter(r => r.unitPrice != null && r.liters != null);
+    const basePrice = priced.length ? priced[0].unitPrice : null;
+    let extra = 0;
+    const priceEffect = priced.map(r => ({
+      date: r.date,
+      value: (extra += r.liters * (r.unitPrice - basePrice))
+    }));
+    const lastPrice = priced.length ? priced[priced.length - 1].unitPrice : null;
+
+    // Mevcut hızla 12 aylık tahmin
+    const days = list.length > 1
+      ? Math.max(1, Math.round((new Date(list[list.length - 1].date) - new Date(list[0].date)) / 86400000))
+      : 0;
+    const perDay = days ? { spend: s.spend / days, km: (s.distance || 0) / days } : null;
+
+    return {
+      perMonth, cumulativeSpend, priceEffect,
+      basePrice, lastPrice,
+      priceChange: (basePrice && lastPrice) ? (lastPrice - basePrice) / basePrice : null,
+      extraCost: extra,
+      days, perDay,
+      yearly: perDay ? { spend: perDay.spend * 365, km: perDay.km * 365 } : null,
+      lPer100: s.lPer100
+    };
+  }
+
   /* ---- Özet istatistikler ---- */
   function stats(list) {
     const spend = sum(list.map(r => r.total));
@@ -200,5 +271,5 @@ const Store = (() => {
       .sort((a, b) => b.spend - a.spend);
   }
 
-  return { load, all, filter, upsert, remove, replaceAll, addMany, clear, stations, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, normalize };
+  return { load, all, filter, upsert, remove, replaceAll, addMany, clear, stations, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
 })();
