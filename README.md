@@ -98,6 +98,22 @@ Tamamı tarayıcının `localStorage` alanında, yalnızca o cihazda. Sunucuya h
 cihazda **JSON yedekten geri yükle** ile aktar. Tarayıcı verilerini temizlemek
 kayıtları da siler.
 
+## Geliştirme
+
+```bash
+npm test          # birim testler (bağımlılık yok, ~1 sn)
+npm run check     # tüm js dosyalarında söz dizimi denetimi
+npm run e2e       # tarayıcı duman testi (playwright gerekir)
+npm run serve     # yerelde çalıştır: http://localhost:8000
+```
+
+Birim testler `node:vm` ile tarayıcı dosyalarını olduğu gibi yükler; sahte bir
+`localStorage` dışında taklit yok. Kapsam: sayı/tarih ayrıştırma, kayıt
+tamamlama, tüketim (kümülatif ve dolum arası), aylara km dağıtımı, analiz
+büyüklükleri, giriş doğrulama, çoklu araç yalıtımı, giderler, sütun
+eşleştirme, CSV ayrıştırma ve xlsx yazıcı. Her push'ta GitHub Actions
+(Node 20 ve 22) koşuyor: `.github/workflows/ci.yml`.
+
 ## Dosya düzeni
 
 ```
@@ -111,6 +127,7 @@ js/xlsx-write.js        .xlsx yazıcı (stored zip + CRC32 + SpreadsheetML)
 js/importer.js          CSV/XLSX okuma, sütun eşleştirme
 js/app.js               arayüz mantığı
 sw.js, manifest.webmanifest, icons/   PWA dosyaları
+tests/run.mjs           birim testler        tests/e2e.mjs   tarayıcı testi
 ```
 
 `.xlsx` dosyaları tarayıcının `DecompressionStream` desteğiyle uygulamanın

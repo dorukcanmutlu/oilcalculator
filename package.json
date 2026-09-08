@@ -1,0 +1,14 @@
+{
+  "name": "yakit-takip",
+  "version": "1.0.0",
+  "description": "Akaryakıt alımlarını kaydeden, harcama ve tüketimi grafikleyen statik web uygulaması",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "check": "node --check js/util.js && node --check js/store.js && node --check js/charts.js && node --check js/importer.js && node --check js/xlsx-lite.js && node --check js/xlsx-write.js && node --check js/app.js && node --check sw.js",
+    "e2e": "node tests/e2e.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}
