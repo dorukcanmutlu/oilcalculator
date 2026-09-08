@@ -89,7 +89,9 @@ const U = (() => {
   const el = sel => document.querySelector(sel);
 
   function download(filename, content, type) {
-    const blob = new Blob([content], { type: type || 'text/plain;charset=utf-8' });
+    const blob = content instanceof Blob
+      ? content
+      : new Blob([content], { type: type || 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename;

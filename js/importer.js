@@ -8,7 +8,7 @@ const Importer = (() => {
     { key: 'liters',    label: 'Litre',       words: ['alinan yakit', 'yakit miktari', 'litre', 'liter', 'miktar', 'hacim', 'yakit l', 'lt'] },
     { key: 'total',     label: 'Tutar (₺)',   words: ['fiyat tl', 'toplam tutar', 'tutar', 'toplam', 'harcanan', 'harcama', 'odenen', 'ucret', 'total', 'amount'] },
     { key: 'unitPrice', label: 'Birim fiyat', words: ['yakit bedeli', 'birim fiyat', 'litre fiyat', 'lt fiyat', 'bedeli', 'birim', 'price', '1l'] },
-    { key: 'fuel',      label: 'Yakıt türü',  words: ['yakit turu', 'yakit tipi', 'yakit cinsi', 'tur', 'cins', 'fuel'] },
+    { key: 'fuel',      label: 'Yakıt türü',  words: ['yakit turu', 'yakit tipi', 'yakit cinsi', 'tur', 'cins', 'fuel', 'yakit'] },
     { key: 'station',   label: 'İstasyon',    words: ['istasyon', 'petrol ofisi', 'petrol', 'marka', 'firma', 'station', 'lokasyon'] },
     { key: 'full',      label: 'Depo tam mı', words: ['tam depo', 'depo dolu', 'dolduruldu', 'dolu', 'full'] },
     { key: 'note',      label: 'Not',         words: ['notlar', 'not', 'aciklama', 'yorum', 'note'] }

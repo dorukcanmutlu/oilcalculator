@@ -65,6 +65,10 @@
 
   <!-- EKLE -->
   <section class="view" id="view-ekle" hidden>
+    <div class="segmented" id="entryMode">
+      <button type="button" data-mode="fuel" class="on">Yakıt</button>
+      <button type="button" data-mode="expense">Gider</button>
+    </div>
     <form class="card form" id="entryForm" autocomplete="off">
       <input type="hidden" id="f-id">
       <div class="grid">
@@ -129,6 +133,39 @@
         <button type="button" class="btn ghost" id="cancelEditBtn" hidden>Vazgeç</button>
       </div>
     </form>
+
+    <form class="card form" id="expenseForm" autocomplete="off" hidden>
+      <input type="hidden" id="x-id">
+      <div class="grid">
+        <label class="field">
+          <span>Tarih</span>
+          <input type="date" id="x-date" required>
+        </label>
+        <label class="field">
+          <span>Tür</span>
+          <select id="x-type"></select>
+        </label>
+      </div>
+      <div class="grid">
+        <label class="field">
+          <span>Tutar ₺</span>
+          <input type="number" id="x-amount" inputmode="decimal" step="0.01" min="0" placeholder="0,00" required>
+        </label>
+        <label class="field">
+          <span>Kilometre</span>
+          <input type="number" id="x-odo" inputmode="numeric" step="1" min="0" placeholder="isteğe bağlı">
+        </label>
+      </div>
+      <label class="field">
+        <span>Not</span>
+        <input type="text" id="x-note" placeholder="örn. yağ + filtre değişimi">
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn primary" id="expenseSaveBtn">Gideri kaydet</button>
+        <button type="button" class="btn ghost" id="expenseCancelBtn" hidden>Vazgeç</button>
+      </div>
+      <p class="hint">Bakım, sigorta, lastik gibi yakıt dışı giderler Analiz sekmesinde toplam araç maliyetine katılır.</p>
+    </form>
   </section>
 
   <!-- KAYITLAR -->
@@ -163,6 +200,11 @@
       <div class="actions">
         <button class="btn ghost" id="bulkToggle">Toplu düzenle</button>
       </div>
+    </div>
+
+    <div class="card" id="expenseListCard" hidden>
+      <h2>Giderler <small id="expenseTotalLabel"></small></h2>
+      <ul class="records" id="expenseList"></ul>
     </div>
 
     <div class="card notice" id="partialCard" hidden>
@@ -205,6 +247,12 @@
       <h2>Aylık litre <small>L</small></h2>
       <div class="chart" id="chartLiters"></div>
     </div>
+    <div class="card" id="cardStationPrice" hidden>
+      <h2>İstasyon başına ortalama fiyat <small>₺/L</small></h2>
+      <div class="chart" id="chartStationPrice"></div>
+      <p class="hint" id="stationPriceHint"></p>
+    </div>
+
     <div class="card" id="cardStations">
       <h2>İstasyon dağılımı <small>₺</small></h2>
       <div class="chart" id="chartStations"></div>
@@ -236,6 +284,16 @@
     <div class="card">
       <h2>Kümülatif harcama <small>₺</small></h2>
       <div class="chart" id="chartCumulative"></div>
+    </div>
+
+    <div class="card" id="cardTotalCost" hidden>
+      <h2>Aylık toplam maliyet <small>yakıt + gider</small></h2>
+      <div class="chart" id="chartTotalCost"></div>
+    </div>
+
+    <div class="card" id="cardExpenseTypes" hidden>
+      <h2>Gider dağılımı <small>₺</small></h2>
+      <div class="chart" id="chartExpenseTypes"></div>
     </div>
 
     <div class="card">
@@ -309,6 +367,7 @@
     <div class="card">
       <h2>Yedekle / dışa aktar</h2>
       <div class="actions wrap">
+        <button class="btn" id="exportXlsxBtn">Excel indir</button>
         <button class="btn" id="exportCsvBtn">CSV indir</button>
         <button class="btn" id="exportJsonBtn">JSON yedek</button>
         <button class="btn ghost" id="restoreBtn">JSON yedekten geri yükle</button>
@@ -344,6 +403,7 @@
 <script src="js/store.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/xlsx-lite.js"></script>
+<script src="js/xlsx-write.js"></script>
 <script src="js/importer.js"></script>
 <script src="js/app.js"></script>
 </body>

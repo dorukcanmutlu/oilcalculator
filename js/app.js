@@ -45,6 +45,7 @@
     renderStats();
     renderList();
     renderStations();
+    renderExpenses();
     updateOdoHint();
     if (!$('#view-grafikler').hidden) renderCharts();
     if (!$('#view-analiz').hidden) renderAnalysis();
@@ -58,7 +59,7 @@
       { label: 'Toplam yakıt', value: U.liters(s.liters), sub: s.monthlySpend ? `Aylık ort. ${U.money(s.monthlySpend)}` : '' },
       { label: 'Ort. birim fiyat', value: s.avgPrice ? '₺' + U.n2.format(s.avgPrice) + '/L' : '—', sub: s.lastPrice ? `Son: ₺${U.n2.format(s.lastPrice)}/L` : '' },
       { label: 'Ort. tüketim', value: s.lPer100 ? U.n1.format(s.lPer100) + ' L/100km' : '—', sub: s.segments.length ? `${s.segments.length} tam depo aralığı` : 'Km + tam depo gerekli' },
-      { label: 'Km başına maliyet', value: s.costPerKm ? '₺' + U.n2.format(s.costPerKm) + '/km' : '—', sub: s.segDistance ? `${U.km(s.segDistance)} ölçüldü` : '' },
+      { label: 'Km başına yakıt', value: s.costPerKm ? '₺' + U.n2.format(s.costPerKm) + '/km' : '—', sub: s.costPerKm ? 'tüketim × birim fiyat' : '' },
       { label: 'Toplam mesafe', value: s.distance ? U.km(s.distance) : '—', sub: 'İlk–son kilometre farkı' }
     ];
     $('#stats').innerHTML = cards.map(c => `
@@ -179,6 +180,20 @@
         : `${series.length} tam depo aralığından hesaplandı; her dolumda depoyu tam doldurduysan bu daha hassastır.`)
       : 'Tüketim için en az iki kayıtta kilometre girmelisin.';
 
+    const prices = Store.stationPrices(list);
+    $('#cardStationPrice').hidden = prices.length < 2;
+    if (prices.length >= 2) {
+      Charts.hbar($('#chartStationPrice'),
+        prices.map(p => ({ label: p.name, value: Math.round(p.avgPrice * 100) / 100 })),
+        { fmt: v => '₺' + U.n2.format(v) + '/L', max: 8 });
+      const cheap = prices[0], dear = prices[prices.length - 1];
+      const fark = (dear.avgPrice - cheap.avgPrice) * list.reduce((s, r) => s + (r.liters || 0), 0);
+      $('#stationPriceHint').textContent =
+        `En ucuz ${cheap.name} (₺${U.n2.format(cheap.avgPrice)}/L), en pahalı ${dear.name} (₺${U.n2.format(dear.avgPrice)}/L). ` +
+        `Hepsini ${cheap.name}'den alsaydın kabaca ${U.money(fark)} daha az öderdin. ` +
+        `Not: fiyatlar aynı günlerde ölçülmediği için zam etkisi de bu farka karışır.`;
+    }
+
     const stationRows = Store.byStation(list);
     const hasStations = stationRows.some(s => s.name !== 'Belirtilmemiş');
     $('#cardStations').hidden = !hasStations;
@@ -190,7 +205,7 @@
 
   function renderAnalysis() {
     const list = current();
-    const a = Store.analysis(list);
+    const a = Store.analysis(list, Store.filterExpenses(range));
     const pct = v => (v == null ? '—' : (v >= 0 ? '+' : '') + U.n0.format(v * 100) + '%');
 
     const cards = [
@@ -211,6 +226,17 @@
         sub: (a.basePrice && a.lastPrice) ? `₺${U.n2.format(a.basePrice)} → ₺${U.n2.format(a.lastPrice)}/L` : ''
       }
     ];
+    if (a.expenseTotal > 0) {
+      cards.push({
+        label: 'Toplam araç maliyeti', value: U.money(a.totalCost),
+        sub: `${U.moneyShort(a.spend)} yakıt + ${U.moneyShort(a.expenseTotal)} gider`
+      });
+      cards.push({
+        label: 'Gerçek km maliyeti',
+        value: a.costPerKmAll ? '₺' + U.n2.format(a.costPerKmAll) + '/km' : '—',
+        sub: '(yakıt + gider) / gidilen km'
+      });
+    }
     $('#analysisStats').innerHTML = cards.map(c => `
       <div class="stat">
         <div class="label">${U.esc(c.label)}</div>
@@ -237,6 +263,19 @@
     Charts.line($('#chartCumulative'), a.cumulativeSpend.map(p => ({ label: U.dateLabel(p.date).slice(0, 6), value: Math.round(p.value) })),
       { fmt: U.money, fmtY: U.moneyShort, color: '--c3', zeroBased: true, area: true });
 
+    const hasExpense = a.expenseTotal > 0;
+    $('#cardTotalCost').hidden = !hasExpense;
+    $('#cardExpenseTypes').hidden = !hasExpense;
+    if (hasExpense) {
+      Charts.stacked($('#chartTotalCost'),
+        months.map(m => ({ label: U.monthLabel(m.ym), values: [Math.round(m.spend), Math.round(m.expense)] })),
+        [{ name: 'Yakıt', color: '--c1' }, { name: 'Gider', color: '--c4' }],
+        { fmt: U.moneyShort, fmtY: U.moneyShort });
+      Charts.hbar($('#chartExpenseTypes'),
+        a.expenseTypes.map(t => ({ label: t.name, value: Math.round(t.amount) })),
+        { fmt: U.moneyShort, max: 8 });
+    }
+
     const rows = months.map(m => `
       <tr>
         <td>${U.esc(U.monthLabel(m.ym))}</td>
@@ -245,13 +284,15 @@
         <td class="num">${U.esc(m.liters ? U.n1.format(m.liters) : '—')}</td>
         <td class="num">${U.esc(m.avgPrice ? U.n2.format(m.avgPrice) : '—')}</td>
         <td class="num">${U.esc(m.spend ? U.n0.format(m.spend) : '—')}</td>
+        ${hasExpense ? `<td class="num">${U.esc(m.expense ? U.n0.format(m.expense) : '—')}</td>` : ''}
       </tr>`).join('');
     const tot = months.reduce((t, m) => ({
-      count: t.count + m.count, km: t.km + m.km, liters: t.liters + m.liters, spend: t.spend + m.spend
-    }), { count: 0, km: 0, liters: 0, spend: 0 });
+      count: t.count + m.count, km: t.km + m.km, liters: t.liters + m.liters,
+      spend: t.spend + m.spend, expense: t.expense + (m.expense || 0)
+    }), { count: 0, km: 0, liters: 0, spend: 0, expense: 0 });
     $('#monthTable').innerHTML = months.length ? `
       <table>
-        <thead><tr><th>Ay</th><th class="num">Alım</th><th class="num">km</th><th class="num">Litre</th><th class="num">₺/L</th><th class="num">Harcama ₺</th></tr></thead>
+        <thead><tr><th>Ay</th><th class="num">Alım</th><th class="num">km</th><th class="num">Litre</th><th class="num">₺/L</th><th class="num">Yakıt ₺</th>${hasExpense ? '<th class="num">Gider ₺</th>' : ''}</tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr>
           <td>Toplam</td>
@@ -260,6 +301,7 @@
           <td class="num">${U.n1.format(tot.liters)}</td>
           <td class="num">${tot.liters ? U.n2.format(tot.spend / tot.liters) : '—'}</td>
           <td class="num">${U.n0.format(tot.spend)}</td>
+          ${hasExpense ? `<td class="num">${U.n0.format(tot.expense)}</td>` : ''}
         </tr></tfoot>
       </table>` : '<p class="empty">Bu dönemde kayıt yok.</p>';
   }
@@ -289,6 +331,83 @@
   $('#backupNowBtn').addEventListener('click', () => {
     show('veri');
     $('#exportJsonBtn').click();
+  });
+
+  /* ---------- Giderler ---------- */
+
+  const X = {
+    id: $('#x-id'), date: $('#x-date'), type: $('#x-type'),
+    amount: $('#x-amount'), odo: $('#x-odo'), note: $('#x-note')
+  };
+  X.type.innerHTML = Store.EXPENSE_TYPES.map(t => `<option>${U.esc(t)}</option>`).join('');
+
+  $('#entryMode').addEventListener('click', e => {
+    const mode = e.target.dataset?.mode;
+    if (!mode) return;
+    document.querySelectorAll('#entryMode button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+    $('#entryForm').hidden = mode !== 'fuel';
+    $('#expenseForm').hidden = mode !== 'expense';
+  });
+
+  function resetExpenseForm() {
+    X.id.value = ''; X.date.value = U.todayISO(); X.amount.value = '';
+    X.odo.value = ''; X.note.value = '';
+    $('#expenseSaveBtn').textContent = 'Gideri kaydet';
+    $('#expenseCancelBtn').hidden = true;
+  }
+
+  $('#expenseForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const editing = !!X.id.value;
+    if (!U.parseNumber(X.amount.value)) return toast('Tutar gir');
+    Store.upsertExpense({
+      id: X.id.value || undefined,
+      date: X.date.value, type: X.type.value,
+      amount: X.amount.value, odo: X.odo.value, note: X.note.value
+    });
+    resetExpenseForm();
+    renderAll();
+    toast(editing ? 'Gider güncellendi' : 'Gider eklendi');
+    if (!editing) show('kayitlar');
+  });
+
+  $('#expenseCancelBtn').addEventListener('click', resetExpenseForm);
+
+  function renderExpenses() {
+    const list = Store.filterExpenses(range).slice().reverse();
+    $('#expenseListCard').hidden = list.length === 0;
+    if (!list.length) return;
+    const total = list.reduce((a, x) => a + (x.amount || 0), 0);
+    $('#expenseTotalLabel').textContent = `${list.length} kalem · ${U.money(total)}`;
+    $('#expenseList').innerHTML = list.map(x => `
+      <li data-id="${U.esc(x.id)}">
+        <div class="rec-main">${U.esc(x.type)} <span style="color:var(--muted);font-weight:500">· ${U.esc(U.dateLabel(x.date))}</span></div>
+        <div class="rec-sub">${x.odo != null ? U.esc(U.km(x.odo)) : ''}${x.note ? (x.odo != null ? ' · ' : '') + U.esc(x.note) : ''}</div>
+        <div class="rec-amount">${U.esc(U.money(x.amount))}</div>
+        <div class="rec-actions"><button class="x-edit">Düzenle</button><button class="x-del del">Sil</button></div>
+      </li>`).join('');
+  }
+
+  $('#expenseList').addEventListener('click', e => {
+    const li = e.target.closest('li[data-id]');
+    if (!li) return;
+    const x = Store.expenses().find(y => y.id === li.dataset.id);
+    if (!x) return;
+    if (e.target.classList.contains('x-edit')) {
+      X.id.value = x.id; X.date.value = x.date; X.type.value = x.type;
+      X.amount.value = x.amount ?? ''; X.odo.value = x.odo ?? ''; X.note.value = x.note;
+      $('#expenseSaveBtn').textContent = 'Gideri güncelle';
+      $('#expenseCancelBtn').hidden = false;
+      document.querySelector('#entryMode [data-mode="expense"]').click();
+      show('ekle');
+    } else if (e.target.classList.contains('x-del')) {
+      Store.removeExpense(x.id);
+      renderAll();
+      toast(`${x.type} gideri silindi`, {
+        label: 'Geri al',
+        fn: () => { Store.upsertExpense(x); renderAll(); toast('Geri alındı'); }
+      });
+    }
   });
 
   /* ---------- Araçlar ---------- */
@@ -672,6 +791,53 @@
     markBackedUp();
   });
 
+  $('#exportXlsxBtn').addEventListener('click', () => {
+    const names = new Map(Store.vehicles().map(v => [v.id, v.name]));
+    const B = t => ({ bold: t });
+
+    const fuelRows = [[B('Araç'), B('Tarih'), B('Kilometre'), B('Litre'), B('Birim fiyat'), B('Tutar'),
+      B('Yakıt'), B('İstasyon'), B('Tam depo'), B('Not')]];
+    for (const r of Store.allRecords()) {
+      fuelRows.push([names.get(r.vehicleId) || '', { date: r.date }, r.odo ?? null,
+        r.liters == null ? null : { money: r.liters }, r.unitPrice == null ? null : { money: r.unitPrice },
+        r.total == null ? null : { money: r.total }, r.fuel, r.station, r.full ? 'Evet' : 'Hayır', r.note]);
+    }
+
+    const sheets = [{ name: 'Yakıt', rows: fuelRows, widths: [14, 11, 11, 9, 11, 11, 10, 14, 9, 20] }];
+
+    const exp = Store.allExpenses();
+    if (exp.length) {
+      const rows = [[B('Araç'), B('Tarih'), B('Tür'), B('Tutar'), B('Kilometre'), B('Not')]];
+      for (const x of exp) {
+        rows.push([names.get(x.vehicleId) || '', { date: x.date }, x.type,
+          x.amount == null ? null : { money: x.amount }, x.odo ?? null, x.note]);
+      }
+      sheets.push({ name: 'Giderler', rows, widths: [14, 11, 16, 11, 11, 24] });
+    }
+
+    const an = Store.analysis(Store.all(), Store.expenses());
+    const sum = [[B('Ay'), B('Alım'), B('km'), B('Litre'), B('₺/L'), B('Yakıt ₺'), B('Gider ₺'), B('100 km ₺')]];
+    for (const m of an.perMonth) {
+      sum.push([m.ym, m.count || null, m.km || null,
+        m.liters ? { money: m.liters } : null, m.avgPrice ? { money: m.avgPrice } : null,
+        m.spend ? { money: m.spend } : null, m.expense ? { money: m.expense } : null,
+        m.per100 ? { money: m.per100 } : null]);
+    }
+    const st = Store.stats(Store.all());
+    sum.push([]);
+    sum.push([B('Toplam'), st.count, st.distance || null, { money: st.liters },
+      st.avgPrice ? { money: st.avgPrice } : null, { money: st.spend },
+      an.expenseTotal ? { money: an.expenseTotal } : null, null]);
+    sum.push([B('Ortalama tüketim'), st.lPer100 ? { money: st.lPer100 } : null, 'L/100km']);
+    sum.push([B('Km maliyeti'), an.costPerKmAll ? { money: an.costPerKmAll } : null, '₺/km']);
+    sheets.push({ name: 'Aylık özet', rows: sum, widths: [18, 9, 10, 10, 10, 12, 11, 11] });
+
+    const bytes = XlsxWrite.build(sheets);
+    U.download(`yakit-${U.todayISO()}.xlsx`,
+      new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    markBackedUp();
+  });
+
   $('#exportJsonBtn').addEventListener('click', () => {
     U.download(`yakit-yedek-${U.todayISO()}.json`, JSON.stringify(Store.exportAll(), null, 2), 'application/json');
     markBackedUp();
@@ -735,6 +901,7 @@
   /* ---------- Başlangıç ---------- */
   Store.load();
   renderVehicles();
+  resetExpenseForm();
   resetVehicleForm();
   resetForm();
   renderAll();

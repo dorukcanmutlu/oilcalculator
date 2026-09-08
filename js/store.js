@@ -37,6 +37,7 @@ const Store = (() => {
     records = records.map(normalize).filter(r => r.date);
     sort();
     migrateVehicles();
+    loadExpenses();
     activeId = vehicleList.some(v => v.id === meta().activeVehicle)
       ? meta().activeVehicle
       : (vehicleList[0]?.id || null);
@@ -54,6 +55,11 @@ const Store = (() => {
       const id = vehicleList[0].id;
       records = records.map(r => (r.vehicleId ? r : { ...r, vehicleId: id }));
       save();
+    }
+    if (vehicleList.length && expenseList.some(x => !x.vehicleId)) {
+      const id = vehicleList[0].id;
+      expenseList = expenseList.map(x => (x.vehicleId ? x : { ...x, vehicleId: id }));
+      saveExpenses();
     }
   }
 
@@ -73,6 +79,90 @@ const Store = (() => {
   function saveVehicles() {
     try { localStorage.setItem(VEHICLE_KEY, JSON.stringify(vehicleList)); }
     catch (e) { console.error('Araçlar yazılamadı', e); }
+  }
+
+  /* ---- Giderler (yakıt dışı) ---- */
+  const EXPENSE_KEY = 'yakit-takip:expenses';
+  const EXPENSE_TYPES = ['Bakım', 'Onarım', 'Lastik', 'Sigorta / Kasko', 'Muayene', 'MTV / Vergi', 'Otopark / Geçiş', 'Ceza', 'Diğer'];
+  let expenseList = [];
+
+  function loadExpenses() {
+    try {
+      expenseList = JSON.parse(localStorage.getItem(EXPENSE_KEY)) || [];
+      if (!Array.isArray(expenseList)) expenseList = [];
+    } catch (e) { expenseList = []; }
+    expenseList = expenseList.map(normalizeExpense).filter(x => x.date);
+    sortExpenses();
+  }
+  const saveExpenses = () => {
+    try { localStorage.setItem(EXPENSE_KEY, JSON.stringify(expenseList)); }
+    catch (e) { console.error('Giderler yazılamadı', e); }
+  };
+  const sortExpenses = () => expenseList.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+  function normalizeExpense(x) {
+    return {
+      id: x.id || U.uid(),
+      vehicleId: x.vehicleId || activeId || null,
+      date: U.parseDate(x.date),
+      type: x.type || 'Diğer',
+      amount: U.parseNumber(x.amount),
+      odo: U.parseNumber(x.odo),
+      note: (x.note || '').trim()
+    };
+  }
+
+  /** Aktif aracın giderleri */
+  const expenses = () => (activeId ? expenseList.filter(x => x.vehicleId === activeId) : expenseList.slice());
+  const allExpenses = () => expenseList.slice();
+
+  function upsertExpense(x) {
+    ensureVehicle();
+    const e = normalizeExpense(x);
+    const i = expenseList.findIndex(y => y.id === e.id);
+    if (i >= 0) expenseList[i] = e; else expenseList.push(e);
+    sortExpenses(); saveExpenses();
+    return e;
+  }
+  function removeExpense(id) {
+    expenseList = expenseList.filter(x => x.id !== id);
+    saveExpenses();
+  }
+
+  /** Giderleri kayıtlarla aynı dönem kuralıyla süzer */
+  function filterExpenses(range) {
+    const mine = expenses();
+    if (!range || range === 'all') return mine;
+    if (typeof range === 'object') {
+      const from = range.from || '0000-01-01', to = range.to || '9999-12-31';
+      return mine.filter(x => x.date >= from && x.date <= to);
+    }
+    const now = new Date();
+    let from;
+    if (range === 'ytd') from = `${now.getFullYear()}-01-01`;
+    else {
+      const d = new Date(now.getFullYear(), now.getMonth() - (Number(range) - 1), 1);
+      from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    }
+    return mine.filter(x => x.date >= from);
+  }
+
+  /** Gider türüne göre toplam, azalan */
+  function expenseByType(list) {
+    const map = new Map();
+    for (const x of list) map.set(x.type, (map.get(x.type) || 0) + (x.amount || 0));
+    return [...map.entries()].map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount);
+  }
+
+  /** Aylık gider toplamı: Map(ym -> tutar) */
+  function expenseByMonth(list) {
+    const map = new Map();
+    for (const x of list) {
+      const ym = x.date.slice(0, 7);
+      map.set(ym, (map.get(ym) || 0) + (x.amount || 0));
+    }
+    return map;
   }
 
   /* ---- Araçlar ---- */
@@ -105,7 +195,8 @@ const Store = (() => {
   function removeVehicle(id) {
     vehicleList = vehicleList.filter(v => v.id !== id);
     records = records.filter(r => r.vehicleId !== id);
-    saveVehicles(); save();
+    expenseList = expenseList.filter(x => x.vehicleId !== id);
+    saveVehicles(); save(); saveExpenses();
     if (activeId === id) setActive(vehicleList[0]?.id || null);
     return vehicleList.length;
   }
@@ -196,7 +287,8 @@ const Store = (() => {
     version: 2,
     exportedAt: new Date().toISOString(),
     vehicles: vehicleList,
-    records
+    records,
+    expenses: expenseList
   });
 
   /** Yedekten geri yükleme: hem eski dizi biçimini hem v2 nesnesini kabul eder. */
@@ -215,7 +307,10 @@ const Store = (() => {
     } else {
       throw new Error('Yedek dosyası tanınmadı');
     }
-    sort(); save(); saveVehicles(); setMeta({ activeVehicle: activeId });
+    expenseList = (Array.isArray(data?.expenses) ? data.expenses : [])
+      .map(x => normalizeExpense({ ...x, vehicleId: x.vehicleId || activeId })).filter(x => x.date);
+    sort(); sortExpenses(); save(); saveVehicles(); saveExpenses();
+    setMeta({ activeVehicle: activeId });
     return records.length;
   }
 
@@ -415,19 +510,31 @@ const Store = (() => {
    * Kayıtlardan türetilen analiz verileri: aylık mesafe ve 100 km maliyeti,
    * kümülatif harcama, fiyat artışının getirdiği ek maliyet ve yıllık tahmin.
    */
-  function analysis(list) {
+  function analysis(list, expenseRows = []) {
     const s = stats(list);
     const km = monthlyDistance(list);
+    const expMonths = expenseByMonth(expenseRows);
     const perMonth = byMonth(list).map(m => {
       const avgPrice = m.liters > 0 ? m.spend / m.liters : null;
       return {
         ym: m.ym, spend: m.spend, liters: m.liters, count: m.count,
         km: Math.round(km.get(m.ym) || 0),
+        expense: expMonths.get(m.ym) || 0,
         avgPrice,
         // 100 km'nin maliyeti = (L/100km) × (₺/L)
         per100: (avgPrice != null && s.lPer100 != null) ? s.lPer100 * avgPrice : null
       };
     });
+    // Yakıt kaydı olmayan aylarda gider varsa onları da tabloya kat
+    for (const [ym, amount] of expMonths) {
+      if (!perMonth.some(m => m.ym === ym)) {
+        perMonth.push({ ym, spend: 0, liters: 0, count: 0, km: 0, expense: amount, avgPrice: null, per100: null });
+      }
+    }
+    perMonth.sort((a, b) => a.ym < b.ym ? -1 : 1);
+
+    const expenseTotal = sum(expenseRows.map(x => x.amount));
+    const totalCost = s.spend + expenseTotal;
 
     // Kümülatif harcama
     let run = 0;
@@ -451,6 +558,11 @@ const Store = (() => {
 
     return {
       perMonth, cumulativeSpend, priceEffect,
+      spend: s.spend, distance: s.distance,
+      expenseTotal, totalCost,
+      expenseTypes: expenseByType(expenseRows),
+      costPerKmAll: s.distance ? totalCost / s.distance : null,
+      fuelCostPerKm: s.distance ? s.spend / s.distance : null,
       basePrice, lastPrice,
       priceChange: (basePrice && lastPrice) ? (lastPrice - basePrice) / basePrice : null,
       extraCost: extra,
@@ -458,6 +570,21 @@ const Store = (() => {
       yearly: perDay ? { spend: perDay.spend * 365, km: perDay.km * 365 } : null,
       lPer100: s.lPer100
     };
+  }
+
+  /** İstasyon başına ortalama birim fiyat (ağırlıklı), ucuzdan pahalıya */
+  function stationPrices(list) {
+    const map = new Map();
+    for (const r of list) {
+      if (!r.station || r.liters == null || r.total == null) continue;
+      const m = map.get(r.station) || { name: r.station, liters: 0, spend: 0, count: 0 };
+      m.liters += r.liters; m.spend += r.total; m.count++;
+      map.set(r.station, m);
+    }
+    return [...map.values()]
+      .filter(m => m.liters > 0)
+      .map(m => ({ ...m, avgPrice: m.spend / m.liters }))
+      .sort((a, b) => a.avgPrice - b.avgPrice);
   }
 
   /* ---- Özet istatistikler ---- */
@@ -520,5 +647,5 @@ const Store = (() => {
       .sort((a, b) => b.spend - a.spend);
   }
 
-  return { load, all, allRecords, ensureVehicle, vehicles, activeVehicle, setActive, saveVehicle, removeVehicle, recordCount, exportAll, importAll, filter, upsert, remove, removeMany, replaceAll, addMany, clear, meta, setMeta, validate, anomalies, suggestPartial, setFull, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
+  return { load, all, allRecords, ensureVehicle, expenses, allExpenses, upsertExpense, removeExpense, filterExpenses, expenseByType, expenseByMonth, EXPENSE_TYPES, stationPrices, vehicles, activeVehicle, setActive, saveVehicle, removeVehicle, recordCount, exportAll, importAll, filter, upsert, remove, removeMany, replaceAll, addMany, clear, meta, setMeta, validate, anomalies, suggestPartial, setFull, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
 })();

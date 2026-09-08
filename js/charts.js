@@ -203,6 +203,55 @@ const Charts = (() => {
     attachTips(host, svg, cfg, marks);
   }
 
+  /**
+   * Yığılmış sütun: aynı ölçekte iki-üç bileşen (ör. yakıt + gider).
+   * Bileşen adları için grafiğin üstünde gösterge çizilir.
+   */
+  function stacked(host, data, series, { fmt = String, fmtY = String } = {}) {
+    const totals = data.map(d => d.values.reduce((a, v) => a + (v || 0), 0));
+    if (!data.length || totals.every(t => !t)) return empty(host);
+    host.innerHTML = '';
+
+    const legend = document.createElement('div');
+    legend.className = 'legend';
+    legend.innerHTML = series.map(s =>
+      `<span><i style="background:${css(s.color)}"></i>${s.name}</span>`).join('');
+    host.appendChild(legend);
+
+    const w = Math.max(260, host.clientWidth || 320);
+    const svg = mk('svg', { viewBox: `0 0 ${w} ${H}`, width: w, height: H, role: 'img' });
+    host.appendChild(svg);
+    const cfg = { svg, w, h: H, pad: { l: 46, r: 10, t: 12, b: 26 } };
+    const { pad, h } = cfg;
+    const { y } = axes(cfg, Math.max(...totals), fmtY);
+
+    const band = (w - pad.l - pad.r) / data.length;
+    const bw = Math.max(3, Math.min(34, band * .62));
+    const marks = [];
+    data.forEach((d, i) => {
+      const cx = pad.l + band * (i + .5);
+      let acc = 0;
+      d.values.forEach((v, si) => {
+        if (!v) { acc += v || 0; return; }
+        const yTop = y(acc + v), yBottom = y(acc);
+        const gap = si > 0 ? 2 : 0;                  // bileşenler arası yüzey boşluğu
+        svg.appendChild(mk('rect', {
+          x: cx - bw / 2, y: yTop, width: bw,
+          height: Math.max(1, yBottom - yTop - gap), rx: 3, fill: css(series[si].color)
+        }));
+        acc += v;
+      });
+      marks.push({
+        x: cx, y: y(totals[i]), label: d.label,
+        text: d.values.map((v, si) => `${series[si].name} ${fmt(v || 0)}`).join(' · ') +
+          (series.length > 1 ? ` = ${fmt(totals[i])}` : '')
+      });
+    });
+    xLabels(cfg, data, i => pad.l + band * (i + .5));
+    svg.setAttribute('aria-label', `Yığılmış sütun grafiği, ${series.map(s => s.name).join(' ve ')}`);
+    attachTips(host, svg, cfg, marks);
+  }
+
   /** Yatay sütun (kategori dağılımı) */
   function hbar(host, data, { fmt = String, max: limit = 6 } = {}) {
     const rows = data.filter(d => d.value > 0).slice(0, limit);
@@ -229,5 +278,5 @@ const Charts = (() => {
     attachTips(host, svg, { w, h, pad: { t: 0, b: 0, l: 0, r: 0 } }, marks, { vertical: false });
   }
 
-  return { bar, line, hbar };
+  return { bar, line, hbar, stacked };
 })();

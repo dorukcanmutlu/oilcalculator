@@ -12,6 +12,12 @@ veriler telefonun tarayıcısında saklanır.
   (L/100 km), km başına maliyet, toplam mesafe. Dönem seçilebilir (3 / 6 / 12 ay, bu yıl, tümü).
 - **Grafikler:** aylık harcama, birim fiyatın zaman içindeki seyri, tüketim,
   aylık litre, istasyon dağılımı.
+- **Yakıt dışı giderler:** bakım, onarım, lastik, sigorta, muayene, vergi,
+  geçiş, ceza. Analiz sekmesinde yakıtla birlikte toplam araç maliyetine ve
+  gerçek km maliyetine katılır.
+- **İstasyon karşılaştırması:** istasyon başına ağırlıklı ortalama birim fiyat.
+- **Excel dışa aktarma:** üç sayfalı `.xlsx` (Yakıt, Giderler, Aylık özet),
+  tarih ve para biçimleri yerinde — bağımlılıksız yazıcıyla üretiliyor.
 - **Analiz:** kayıtlardan türetilen veriler — 100 km sürmenin aylık maliyeti,
   aylara dağıtılmış gidilen yol, fiyat artışının bugüne kadarki faturası,
   kümülatif harcama, günlük km/gider ve 12 aylık tahmin, aylık özet tablosu.
@@ -100,7 +106,8 @@ css/styles.css          tema, mobil düzen (açık/koyu otomatik)
 js/util.js              biçimlendirme, sayı/tarih ayrıştırma
 js/store.js             localStorage kayıtları, istatistik ve tüketim hesapları
 js/charts.js            bağımlılıksız SVG grafikler
-js/xlsx-lite.js         .xlsx (zip + XML) okuyucu, bağımlılıksız
+js/xlsx-lite.js         .xlsx okuyucu (zip + XML), bağımlılıksız
+js/xlsx-write.js        .xlsx yazıcı (stored zip + CRC32 + SpreadsheetML)
 js/importer.js          CSV/XLSX okuma, sütun eşleştirme
 js/app.js               arayüz mantığı
 sw.js, manifest.webmanifest, icons/   PWA dosyaları

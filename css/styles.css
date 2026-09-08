@@ -174,6 +174,15 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .chart-tip b { font-weight: 650; margin-right: 4px; }
 .chart svg { display: block; width: 100%; height: auto; }
 .chart .no-data { color: var(--muted); font-size: 13px; padding: 22px 0; text-align: center; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); padding: 0 0 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.segmented { display: grid; grid-auto-flow: column; gap: 6px; background: var(--surface-2); border-radius: 10px; padding: 4px; }
+.segmented button {
+  background: none; border: 0; padding: 9px 8px; border-radius: 8px;
+  font-weight: 600; color: var(--muted); cursor: pointer;
+}
+.segmented button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 
 /* Import preview */
 .preview { overflow-x: auto; }
