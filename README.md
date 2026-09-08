@@ -1,0 +1,80 @@
+# Yakıt Takip
+
+Akaryakıt alımlarını telefondan kaydettiğin, harcama ve tüketimini grafiklerle
+gördüğün web uygulaması. Sunucu, kurulum ve üyelik yok: tek klasör statik dosya,
+veriler telefonun tarayıcısında saklanır.
+
+## Neler var
+
+- **Hızlı giriş:** tarih, kilometre, litre, birim fiyat, tutar, istasyon, yakıt türü, not.
+  Litre / birim fiyat / tutar üçlüsünden ikisini yazınca üçüncüsü otomatik hesaplanır.
+- **Özet:** toplam harcama, toplam yakıt, ortalama birim fiyat, ortalama tüketim
+  (L/100 km), km başına maliyet, toplam mesafe. Dönem seçilebilir (3 / 6 / 12 ay, bu yıl, tümü).
+- **Grafikler:** aylık harcama, birim fiyatın zaman içindeki seyri, tüketim,
+  aylık litre, istasyon dağılımı.
+- **Excel / CSV içe aktarma:** kendi tablonu yükleyip sütunları eşleştirirsin
+  (`.xlsx`, `.xls`, `.csv`). Türkçe sayı (`1.234,56`) ve tarih (`12.02.2025`)
+  biçimleri ile Excel tarih hücreleri otomatik çözülür.
+- **Yedekleme:** CSV / JSON dışa aktarma, JSON yedekten geri yükleme.
+- **Telefona kurulum:** PWA — ana ekrana eklenir, çevrimdışı çalışır.
+
+## Yayına alma (GitHub Pages)
+
+1. GitHub'da bu deponun **Settings → Pages** bölümüne gir.
+2. **Source: Deploy from a branch**, branch olarak `main` (veya bu dalı) ve `/ (root)` seç.
+3. Bir iki dakika sonra adres hazır olur:
+   `https://<kullanıcı-adın>.github.io/oilcalculator/`
+4. Telefonda bu adresi aç → tarayıcı menüsünden **Ana ekrana ekle**. Artık
+   uygulama gibi açılır ve internet olmadan da çalışır.
+
+Yerelde denemek için:
+
+```bash
+python3 -m http.server 8000
+# tarayıcıda http://localhost:8000
+```
+
+> Not: `file://` ile açarsan servis çalışanı (çevrimdışı destek) devre dışı kalır;
+> gerisi yine çalışır.
+
+## Kendi Excel'ini aktarma
+
+1. Uygulamada **Veri** sekmesi → **Excel / CSV içe aktar** → dosyanı seç.
+2. Uygulama başlık satırını ve sütunları tahmin eder; **Başlık satırı** ve alan
+   eşleşmelerini kontrol edip düzelt.
+3. Önizlemedeki ilk satırlar doğruysa **İçe aktar**'a bas.
+
+Zorunlu tek alan **Tarih**. Ayrıca **Tutar** ya da **Litre** sütunlarından en az
+biri gerekir; eksik olan üçüncü değer (litre / birim fiyat / tutar) hesaplanır.
+Tüketim grafiği için **Kilometre** sütunu ve depoyu tam doldurduğun alımlar gerekir.
+Beklenen biçim için `ornek/sablon.csv` dosyasına bakabilirsin.
+
+## Tüketim nasıl hesaplanıyor
+
+İki *tam depo* alımı arasındaki kilometre farkına, bu aralıkta alınan toplam
+litre bölünür: `L/100km = (aradaki litre / gidilen km) × 100`. Aralarda kalan
+kısmi dolumlar da litreye eklenir. Kilometre girilmemiş ya da "tam depo"
+işaretlenmemiş alımlar bu hesaba katılmaz.
+
+## Veriler nerede duruyor
+
+Tamamı tarayıcının `localStorage` alanında, yalnızca o cihazda. Sunucuya hiçbir
+şey gönderilmez. Telefon/tarayıcı değiştirirken **Veri → JSON yedek** al, yeni
+cihazda **JSON yedekten geri yükle** ile aktar. Tarayıcı verilerini temizlemek
+kayıtları da siler.
+
+## Dosya düzeni
+
+```
+index.html              arayüz iskeleti
+css/styles.css          tema, mobil düzen (açık/koyu otomatik)
+js/util.js              biçimlendirme, sayı/tarih ayrıştırma
+js/store.js             localStorage kayıtları, istatistik ve tüketim hesapları
+js/charts.js            bağımlılıksız SVG grafikler
+js/importer.js          CSV/XLSX okuma, sütun eşleştirme
+js/app.js               arayüz mantığı
+sw.js, manifest.webmanifest, icons/   PWA dosyaları
+```
+
+Excel okumak için SheetJS yalnızca `.xlsx` dosyası seçtiğinde CDN'den yüklenir;
+uygulamanın geri kalanı hiçbir dış bağımlılık kullanmaz.
