@@ -128,7 +128,13 @@
       <div class="chart" id="chartPrice"></div>
     </div>
     <div class="card">
-      <h2>Tüketim <small>L/100 km</small></h2>
+      <div class="card-head">
+        <h2>Tüketim <small>L/100 km</small></h2>
+        <select id="consumptionMode" aria-label="Tüketim hesaplama yöntemi">
+          <option value="cumulative">Kümülatif</option>
+          <option value="segment">Dolum arası</option>
+        </select>
+      </div>
       <div class="chart" id="chartConsumption"></div>
       <p class="hint" id="consumptionHint"></p>
     </div>
@@ -136,7 +142,7 @@
       <h2>Aylık litre <small>L</small></h2>
       <div class="chart" id="chartLiters"></div>
     </div>
-    <div class="card">
+    <div class="card" id="cardStations">
       <h2>İstasyon dağılımı <small>₺</small></h2>
       <div class="chart" id="chartStations"></div>
     </div>
@@ -202,6 +208,7 @@
 <script src="js/util.js"></script>
 <script src="js/store.js"></script>
 <script src="js/charts.js"></script>
+<script src="js/xlsx-lite.js"></script>
 <script src="js/importer.js"></script>
 <script src="js/app.js"></script>
 </body>

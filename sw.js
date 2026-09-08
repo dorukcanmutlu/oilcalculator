@@ -2,7 +2,7 @@
 const CACHE = 'yakit-takip-v1';
 const ASSETS = [
   './', './index.html', './css/styles.css',
-  './js/util.js', './js/store.js', './js/charts.js', './js/importer.js', './js/app.js',
+  './js/util.js', './js/store.js', './js/charts.js', './js/xlsx-lite.js', './js/importer.js', './js/app.js',
   './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'
 ];
 

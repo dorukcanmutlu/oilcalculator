@@ -122,6 +122,8 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .link-btn { background: none; border: 0; color: var(--accent); font-weight: 600; padding: 4px 0; cursor: pointer; text-align: left; }
 
 /* Record list */
+.card-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.card-head select { width: auto; padding: 6px 8px; font-size: 13px; }
 .list-head { display: flex; gap: 8px; align-items: center; }
 .count { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .records { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

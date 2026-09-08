@@ -13,8 +13,9 @@ veriler telefonun tarayıcısında saklanır.
 - **Grafikler:** aylık harcama, birim fiyatın zaman içindeki seyri, tüketim,
   aylık litre, istasyon dağılımı.
 - **Excel / CSV içe aktarma:** kendi tablonu yükleyip sütunları eşleştirirsin
-  (`.xlsx`, `.xls`, `.csv`). Türkçe sayı (`1.234,56`) ve tarih (`12.02.2025`)
-  biçimleri ile Excel tarih hücreleri otomatik çözülür.
+  (`.xlsx`, `.csv`). Başlık satırı ve sütunlar otomatik tahmin edilir; Türkçe
+  sayı (`1.234,56`) ve tarih (`12.02.2025`) biçimleri ile Excel tarih hücreleri
+  çözülür. Excel okuma uygulamanın içinde yazılı, dış kütüphane gerekmez.
 - **Yedekleme:** CSV / JSON dışa aktarma, JSON yedekten geri yükleme.
 - **Telefona kurulum:** PWA — ana ekrana eklenir, çevrimdışı çalışır.
 
@@ -51,10 +52,16 @@ Beklenen biçim için `ornek/sablon.csv` dosyasına bakabilirsin.
 
 ## Tüketim nasıl hesaplanıyor
 
-İki *tam depo* alımı arasındaki kilometre farkına, bu aralıkta alınan toplam
-litre bölünür: `L/100km = (aradaki litre / gidilen km) × 100`. Aralarda kalan
-kısmi dolumlar da litreye eklenir. Kilometre girilmemiş ya da "tam depo"
-işaretlenmemiş alımlar bu hesaba katılmaz.
+Grafikte iki yöntem var:
+
+- **Kümülatif** (varsayılan): ilk kayıttan itibaren toplam litre / gidilen km.
+  Excel'deki `SUM(C$2:C_önceki)/(B_i-B$2)*100` sütununun aynısı. Depoyu her
+  seferinde tam doldurmasan da doğru sonuç verir.
+- **Dolum arası:** iki *tam depo* alımı arasındaki litre / o aralıkta gidilen km.
+  Her dolumda depoyu tam dolduruyorsan daha hassastır; arada kalan kısmi
+  dolumların litresi de aralığa eklenir.
+
+Her iki durumda da kilometre girilmemiş kayıtlar hesaba katılmaz.
 
 ## Veriler nerede duruyor
 
@@ -71,10 +78,12 @@ css/styles.css          tema, mobil düzen (açık/koyu otomatik)
 js/util.js              biçimlendirme, sayı/tarih ayrıştırma
 js/store.js             localStorage kayıtları, istatistik ve tüketim hesapları
 js/charts.js            bağımlılıksız SVG grafikler
+js/xlsx-lite.js         .xlsx (zip + XML) okuyucu, bağımlılıksız
 js/importer.js          CSV/XLSX okuma, sütun eşleştirme
 js/app.js               arayüz mantığı
 sw.js, manifest.webmanifest, icons/   PWA dosyaları
 ```
 
-Excel okumak için SheetJS yalnızca `.xlsx` dosyası seçtiğinde CDN'den yüklenir;
-uygulamanın geri kalanı hiçbir dış bağımlılık kullanmaz.
+`.xlsx` dosyaları tarayıcının `DecompressionStream` desteğiyle uygulamanın
+kendi içinde okunur; bu API'nin bulunmadığı çok eski tarayıcılarda yedek olarak
+SheetJS CDN'den yüklenir. Bunun dışında hiçbir dış bağımlılık yoktur.

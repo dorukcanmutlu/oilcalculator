@@ -121,6 +121,25 @@ const Store = (() => {
     return segs;
   }
 
+  /**
+   * Kümülatif tüketim: ilk kayıttan itibaren toplam litre / gidilen km.
+   * (Excel'deki SUM(C2:C_onceki)/(B_i-B_2)*100 formülünün karşılığı.)
+   */
+  function cumulativeConsumption(list) {
+    const rows = list.filter(r => r.odo != null && r.liters != null).slice()
+      .sort((a, b) => a.odo - b.odo);
+    if (rows.length < 2) return [];
+    const startOdo = rows[0].odo;
+    let liters = 0;
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      liters += rows[i - 1].liters;
+      const dist = rows[i].odo - startOdo;
+      if (dist > 0) out.push({ date: rows[i].date, value: round(liters / dist * 100, 2) });
+    }
+    return out;
+  }
+
   /* ---- Özet istatistikler ---- */
   function stats(list) {
     const spend = sum(list.map(r => r.total));
@@ -181,5 +200,5 @@ const Store = (() => {
       .sort((a, b) => b.spend - a.spend);
   }
 
-  return { load, all, filter, upsert, remove, replaceAll, addMany, clear, stations, stats, byMonth, byStation, consumptionSegments, normalize };
+  return { load, all, filter, upsert, remove, replaceAll, addMany, clear, stations, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, normalize };
 })();

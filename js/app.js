@@ -95,15 +95,25 @@
     Charts.line($('#chartPrice'), priceSeries,
       { fmt: v => '₺' + U.n2.format(v) + '/L', fmtY: v => U.n2.format(v), color: '--c2' });
 
-    const segs = Store.consumptionSegments(list);
-    Charts.line($('#chartConsumption'), segs.map(s => ({ label: U.dateLabel(s.date).slice(0, 6), value: s.lPer100 })),
+    const mode = $('#consumptionMode').value;
+    const series = mode === 'cumulative'
+      ? Store.cumulativeConsumption(list).map(s => ({ label: U.dateLabel(s.date).slice(0, 6), value: s.value }))
+      : Store.consumptionSegments(list).map(s => ({ label: U.dateLabel(s.date).slice(0, 6), value: s.lPer100 }));
+    Charts.line($('#chartConsumption'), series,
       { fmt: v => U.n1.format(v) + ' L/100km', fmtY: v => U.n1.format(v), color: '--c4' });
-    $('#consumptionHint').textContent = segs.length
-      ? `${segs.length} tam depo aralığından hesaplandı.`
-      : 'Tüketim için ardışık en az iki alımda kilometre girip “depo tam dolduruldu” işaretlemelisin.';
+    $('#consumptionHint').textContent = series.length
+      ? (mode === 'cumulative'
+        ? 'İlk kayıttan bugüne toplam litre / gidilen km. Kısmi dolumlarda da doğru çalışır.'
+        : `${series.length} tam depo aralığından hesaplandı; her dolumda depoyu tam doldurduysan bu daha hassastır.`)
+      : 'Tüketim için en az iki kayıtta kilometre girmelisin.';
 
-    Charts.hbar($('#chartStations'), Store.byStation(list).map(s => ({ label: s.name, value: Math.round(s.spend) })),
-      { fmt: U.moneyShort });
+    const stationRows = Store.byStation(list);
+    const hasStations = stationRows.some(s => s.name !== 'Belirtilmemiş');
+    $('#cardStations').hidden = !hasStations;
+    if (hasStations) {
+      Charts.hbar($('#chartStations'), stationRows.map(s => ({ label: s.name, value: Math.round(s.spend) })),
+        { fmt: U.moneyShort });
+    }
   }
 
   /* ---------- Form ---------- */
@@ -183,6 +193,7 @@
 
   $('#searchInput').addEventListener('input', renderList);
   $('#rangeSelect').addEventListener('change', e => { range = e.target.value; renderAll(); });
+  $('#consumptionMode').addEventListener('change', renderCharts);
 
   /* ---------- İçe aktarma ---------- */
   $('#fileInput').addEventListener('change', async e => {

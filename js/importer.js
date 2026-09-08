@@ -3,18 +3,22 @@ const Importer = (() => {
   const XLSX_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
   const FIELDS = [
-    { key: 'date',      label: 'Tarih',        required: true,  words: ['tarih', 'date', 'gun', 'gün'] },
-    { key: 'total',     label: 'Tutar (₺)',    words: ['tutar', 'toplam', 'ucret', 'ücret', 'odenen', 'ödenen', 'harcama', 'total', 'amount', 'tl'] },
-    { key: 'liters',    label: 'Litre',        words: ['litre', 'lt', 'liter', 'miktar', 'hacim'] },
-    { key: 'unitPrice', label: 'Birim fiyat',  words: ['birim', 'fiyat', 'price', 'lt fiyat', 'litre fiyat', 'birim fiyat'] },
-    { key: 'odo',       label: 'Kilometre',    words: ['km', 'kilometre', 'odo', 'sayac', 'sayaç', 'mileage'] },
-    { key: 'fuel',      label: 'Yakıt türü',   words: ['yakit', 'yakıt', 'tur', 'tür', 'cins', 'motorin', 'benzin', 'fuel'] },
-    { key: 'station',   label: 'İstasyon',     words: ['istasyon', 'petrol', 'firma', 'marka', 'station', 'yer', 'lokasyon'] },
-    { key: 'full',      label: 'Depo tam mı',  words: ['dolu', 'tam depo', 'full'] },
-    { key: 'note',      label: 'Not',          words: ['not', 'aciklama', 'açıklama', 'note', 'yorum'] }
+    { key: 'date',      label: 'Tarih',       required: true, words: ['tarih', 'date', 'gun'] },
+    { key: 'odo',       label: 'Kilometre',   words: ['kilometre sayaci', 'kilometre', 'sayac', 'mileage', 'odometre', 'odo', 'km'] },
+    { key: 'liters',    label: 'Litre',       words: ['alinan yakit', 'yakit miktari', 'litre', 'liter', 'miktar', 'hacim', 'yakit l', 'lt'] },
+    { key: 'total',     label: 'Tutar (₺)',   words: ['fiyat tl', 'toplam tutar', 'tutar', 'toplam', 'harcanan', 'harcama', 'odenen', 'ucret', 'total', 'amount'] },
+    { key: 'unitPrice', label: 'Birim fiyat', words: ['yakit bedeli', 'birim fiyat', 'litre fiyat', 'lt fiyat', 'bedeli', 'birim', 'price', '1l'] },
+    { key: 'fuel',      label: 'Yakıt türü',  words: ['yakit turu', 'yakit tipi', 'yakit cinsi', 'tur', 'cins', 'fuel'] },
+    { key: 'station',   label: 'İstasyon',    words: ['istasyon', 'petrol ofisi', 'petrol', 'marka', 'firma', 'station', 'lokasyon'] },
+    { key: 'full',      label: 'Depo tam mı', words: ['tam depo', 'depo dolu', 'dolduruldu', 'dolu', 'full'] },
+    { key: 'note',      label: 'Not',         words: ['notlar', 'not', 'aciklama', 'yorum', 'note'] }
   ];
 
-  const norm = s => String(s ?? '').toLocaleLowerCase('tr').replace(/[^a-zçğıöşü0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const TR = { 'ç': 'c', 'ğ': 'g', 'ı': 'i', 'i̇': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u', 'â': 'a', 'î': 'i', 'û': 'u' };
+  /** Başlıkları karşılaştırmak için sadeleştirir: küçük harf, Türkçe harfler ASCII'ye. */
+  const norm = s => String(s ?? '').toLocaleLowerCase('tr')
+    .replace(/[çğıi̇öşüâîû]/g, c => TR[c] || c)
+    .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 
   /* ---- CSV ---- */
   function parseCSV(text) {
@@ -39,7 +43,7 @@ const Importer = (() => {
     return rows.filter(r => r.some(v => String(v).trim() !== ''));
   }
 
-  /* ---- XLSX (SheetJS ihtiyaç anında yüklenir) ---- */
+  /* ---- XLSX: önce yerleşik okuyucu (js/xlsx-lite.js), olmazsa SheetJS ---- */
   function loadXLSX() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
     return new Promise((res, rej) => {
@@ -56,8 +60,15 @@ const Importer = (() => {
     if (name.endsWith('.csv') || name.endsWith('.txt')) {
       return parseCSV(await file.text());
     }
-    const XLSX = await loadXLSX();
     const buf = await file.arrayBuffer();
+    if (XlsxLite.supported()) {
+      try {
+        return await XlsxLite.read(buf);
+      } catch (err) {
+        console.warn('Yerleşik Excel okuyucu başarısız, yedek kütüphane deneniyor', err);
+      }
+    }
+    const XLSX = await loadXLSX();
     const wb = XLSX.read(buf, { type: 'array', cellDates: true });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
@@ -79,15 +90,30 @@ const Importer = (() => {
     return best;
   }
 
-  /** Başlıklara bakarak alan eşleşmesi önerir. */
+  /**
+   * Başlıklara bakarak alan eşleşmesi önerir.
+   * Her (alan, sütun) çifti puanlanır; en yüksek puanlı eşleşmeler sırayla atanır,
+   * böylece "Yakıt Bedeli (1L)" birim fiyata, "Alınan Yakıt (L)" litreye gider.
+   */
   function guess(headers) {
     const cols = headers.map(norm);
-    const map = {};
-    const used = new Set();
-    for (const f of FIELDS) {
-      let idx = cols.findIndex((c, i) => c && !used.has(i) && f.words.some(w => c === w));
-      if (idx < 0) idx = cols.findIndex((c, i) => c && !used.has(i) && f.words.some(w => c.includes(w)));
-      if (idx >= 0) { map[f.key] = idx; used.add(idx); }
+    const pairs = [];
+    FIELDS.forEach(f => {
+      cols.forEach((c, i) => {
+        if (!c) return;
+        let best = 0;
+        for (const w of f.words) {
+          if (c === w) best = Math.max(best, 100 + w.length);
+          else if (c.includes(w)) best = Math.max(best, 10 + w.length);
+        }
+        if (best) pairs.push({ key: f.key, col: i, score: best });
+      });
+    });
+    pairs.sort((a, b) => b.score - a.score);
+    const map = {}, usedCols = new Set();
+    for (const p of pairs) {
+      if (map[p.key] != null || usedCols.has(p.col)) continue;
+      map[p.key] = p.col; usedCols.add(p.col);
     }
     return map;
   }
