@@ -16,11 +16,20 @@
     location.hash = view;
   }
 
-  function toast(msg) {
+  /** Kısa bildirim; action verilirse yanında bir düğme gösterir (ör. "Geri al"). */
+  function toast(msg, action) {
     const t = $('#toast');
-    t.textContent = msg; t.hidden = false;
+    t.textContent = msg;
+    if (action) {
+      const btn = document.createElement('button');
+      btn.className = 'toast-btn';
+      btn.textContent = action.label;
+      btn.addEventListener('click', () => { t.hidden = true; action.fn(); });
+      t.appendChild(btn);
+    }
+    t.hidden = false;
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => { t.hidden = true; }, 2600);
+    toast._t = setTimeout(() => { t.hidden = true; }, action ? 7000 : 2600);
   }
 
   /* ---------- Render ---------- */
@@ -30,6 +39,7 @@
     renderStats();
     renderList();
     renderStations();
+    updateOdoHint();
     if (!$('#view-grafikler').hidden) renderCharts();
     if (!$('#view-analiz').hidden) renderAnalysis();
   }
@@ -70,9 +80,19 @@
     </li>`;
   }
 
+  const SORTS = {
+    'date-desc': (a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0,
+    'date-asc': (a, b) => a.date > b.date ? 1 : a.date < b.date ? -1 : 0,
+    'total-desc': (a, b) => (b.total || 0) - (a.total || 0),
+    'liters-desc': (a, b) => (b.liters || 0) - (a.liters || 0),
+    'price-desc': (a, b) => (b.unitPrice || 0) - (a.unitPrice || 0)
+  };
+
   function renderList() {
     const q = ($('#searchInput').value || '').toLocaleLowerCase('tr');
-    let list = current().slice().reverse();
+    const fuel = $('#fuelFilter').value;
+    let list = current().slice().sort(SORTS[$('#sortSelect').value] || SORTS['date-desc']);
+    if (fuel) list = list.filter(r => r.fuel === fuel);
     if (q) list = list.filter(r => (r.station + ' ' + r.note + ' ' + r.fuel).toLocaleLowerCase('tr').includes(q));
     $('#recordList').innerHTML = list.map(r => rowHTML(r, true)).join('');
     $('#listEmpty').hidden = list.length > 0;
@@ -82,6 +102,10 @@
 
   function renderStations() {
     $('#stationList').innerHTML = Store.stations().map(s => `<option value="${U.esc(s)}">`).join('');
+    const sel = $('#fuelFilter'), cur = sel.value;
+    sel.innerHTML = '<option value="">Tüm yakıtlar</option>' +
+      Store.fuels().map(f => `<option value="${U.esc(f)}">${U.esc(f)}</option>`).join('');
+    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
   }
 
   function renderCharts() {
@@ -222,7 +246,26 @@
     if (last) { F.fuel.value = last.fuel; F.station.value = last.station; }
     $('#saveBtn').textContent = 'Kaydet';
     $('#cancelEditBtn').hidden = true;
+    updateOdoHint();
   }
+
+  /** Kilometre alanının altında son kaydı ve girilen değerin farkını gösterir. */
+  function updateOdoHint() {
+    const prev = Store.lastOdoBefore(F.date.value, F.id.value);
+    const val = U.parseNumber(F.odo.value);
+    if (!prev) {
+      $('#odoHint').textContent = val == null ? 'İlk kilometre kaydı' : '';
+      return;
+    }
+    const base = `Son: ${U.n0.format(prev.odo)} km · ${U.dateLabel(prev.date)}`;
+    if (val == null) { $('#odoHint').textContent = base; return; }
+    const diff = val - prev.odo;
+    $('#odoHint').textContent = diff > 0
+      ? `${base} · bu kayıtla +${U.n0.format(diff)} km`
+      : `${base} · dikkat: ${U.n0.format(diff)} km (geriye gidiyor)`;
+  }
+  F.odo.addEventListener('input', updateOdoHint);
+  F.date.addEventListener('change', updateOdoHint);
 
   function editRecord(id) {
     const r = Store.all().find(x => x.id === id);
@@ -232,6 +275,7 @@
     F.price.value = r.unitPrice ?? ''; F.total.value = r.total ?? '';
     F.fuel.value = r.fuel; F.station.value = r.station;
     F.full.checked = r.full; F.note.value = r.note;
+    updateOdoHint();
     $('#saveBtn').textContent = 'Güncelle';
     $('#cancelEditBtn').hidden = false;
     show('ekle');
@@ -264,13 +308,38 @@
     const li = btn.closest('li[data-id]');
     if (li && btn.classList.contains('edit')) editRecord(li.dataset.id);
     else if (li && btn.classList.contains('del')) {
-      if (confirm('Bu kayıt silinsin mi?')) { Store.remove(li.dataset.id); renderAll(); toast('Silindi'); }
+      const rec = Store.all().find(x => x.id === li.dataset.id);
+      if (!rec) return;
+      Store.remove(rec.id);
+      renderAll();
+      toast(`${U.dateLabel(rec.date)} silindi`, {
+        label: 'Geri al',
+        fn: () => { Store.upsert(rec); renderAll(); renderStations(); toast('Kayıt geri alındı'); }
+      });
     } else if (btn.dataset.goto) show(btn.dataset.goto);
     else if (btn.classList.contains('tab')) show(btn.dataset.view);
   });
 
   $('#searchInput').addEventListener('input', renderList);
-  $('#rangeSelect').addEventListener('change', e => { range = e.target.value; renderAll(); });
+  $('#rangeSelect').addEventListener('change', e => {
+    if (e.target.value === 'custom') {
+      const all = Store.all();
+      if (!$('#rangeFrom').value) $('#rangeFrom').value = all.length ? all[0].date : U.todayISO();
+      if (!$('#rangeTo').value) $('#rangeTo').value = all.length ? all[all.length - 1].date : U.todayISO();
+      $('#customRange').hidden = false;
+      range = { from: $('#rangeFrom').value, to: $('#rangeTo').value };
+    } else {
+      $('#customRange').hidden = true;
+      range = e.target.value;
+    }
+    renderAll();
+  });
+  ['#rangeFrom', '#rangeTo'].forEach(sel => $(sel).addEventListener('change', () => {
+    range = { from: $('#rangeFrom').value, to: $('#rangeTo').value };
+    renderAll();
+  }));
+  $('#sortSelect').addEventListener('change', renderList);
+  $('#fuelFilter').addEventListener('change', renderList);
   $('#consumptionMode').addEventListener('change', renderCharts);
 
   /* ---------- İçe aktarma ---------- */

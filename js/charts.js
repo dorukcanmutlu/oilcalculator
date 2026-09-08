@@ -10,7 +10,70 @@ const Charts = (() => {
     if (text != null) e.textContent = text;
     return e;
   };
-  const tip = (parent, text) => parent.appendChild(mk('title', {}, text));
+
+  /**
+   * Dokunmatik ve fare için değer baloncuğu. Grafiğe dokunulunca/üzerine
+   * gelinince en yakın işaret bulunur, baloncuk ve dikey kılavuz gösterilir.
+   * (SVG <title> mobilde hiç çalışmadığı için elle yazıldı.)
+   */
+  function attachTips(host, svg, cfg, marks, { vertical = true } = {}) {
+    host._marks = marks;
+    if (!marks.length) return;
+    svg.style.touchAction = 'pan-y';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chart-tip';
+    bubble.hidden = true;
+    host.appendChild(bubble);
+
+    let cross = null;
+    if (vertical) {
+      cross = mk('line', {
+        y1: cfg.pad.t, y2: cfg.h - cfg.pad.b, stroke: css('--muted'),
+        'stroke-width': 1, 'stroke-dasharray': '3 3', opacity: .6
+      });
+      cross.style.display = 'none';
+      svg.insertBefore(cross, svg.firstChild);
+    }
+
+    let hideTimer = null;
+    const hide = () => {
+      bubble.hidden = true;
+      if (cross) cross.style.display = 'none';
+    };
+
+    const show = e => {
+      const rect = svg.getBoundingClientRect();
+      const scale = rect.width / cfg.w || 1;
+      const mx = (e.clientX - rect.left) / scale;
+      const my = (e.clientY - rect.top) / scale;
+      let best = null, bestD = Infinity;
+      for (const m of marks) {
+        const d = vertical ? Math.abs(m.x - mx) : Math.abs(m.y - my);
+        if (d < bestD) { bestD = d; best = m; }
+      }
+      if (!best) return hide();
+      bubble.hidden = false;
+      bubble.innerHTML = `<b>${best.label}</b> ${best.text}`;
+      const left = Math.max(6, Math.min(rect.width - 6, best.x * scale));
+      bubble.style.left = left + 'px';
+      bubble.style.top = Math.max(0, best.y * scale) + 'px';
+      if (cross) {
+        cross.style.display = '';
+        cross.setAttribute('x1', best.x);
+        cross.setAttribute('x2', best.x);
+      }
+      clearTimeout(hideTimer);
+      if (e.pointerType !== 'mouse') hideTimer = setTimeout(hide, 2600);
+    };
+
+    svg.addEventListener('pointerdown', show);
+    svg.addEventListener('pointermove', e => {
+      if (e.pointerType === 'mouse' || e.buttons) show(e);
+    });
+    svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hide(); });
+    svg.addEventListener('pointercancel', hide);
+  }
 
   function frame(host) {
     host.innerHTML = '';
@@ -72,17 +135,19 @@ const Charts = (() => {
     const { y } = axes(cfg, max, fmtY);
     const band = (w - pad.l - pad.r) / data.length;
     const bw = Math.max(3, Math.min(34, band * .62));
+    const marks = [];
     data.forEach((d, i) => {
       const cx = pad.l + band * (i + .5);
       const yv = y(d.value);
-      const rect = mk('rect', {
+      svg.appendChild(mk('rect', {
         x: cx - bw / 2, y: Math.min(yv, h - pad.b), width: bw,
         height: Math.max(0, h - pad.b - yv), rx: 3, fill: css(color)
-      });
-      tip(rect, `${d.label}: ${fmt(d.value)}`);
-      svg.appendChild(rect);
+      }));
+      marks.push({ x: cx, y: yv, label: d.label, text: fmt(d.value) });
     });
     xLabels(cfg, data, i => pad.l + band * (i + .5));
+    svg.setAttribute('aria-label', `Sütun grafiği, ${data.length} değer, en yüksek ${fmt(max)}`);
+    attachTips(host, svg, cfg, marks);
   }
 
   /** Çizgi grafiği (noktalı) */
@@ -127,13 +192,15 @@ const Charts = (() => {
       }
     }
     svg.appendChild(mk('path', { d: d.trim(), fill: 'none', stroke: css(color), 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    const marks = [];
     data.forEach((p, i) => {
       if (p.value == null || !isFinite(p.value)) return;
-      const c = mk('circle', { cx: x(i), cy: y(p.value), r: pts.length > 40 ? 1.8 : 3, fill: css(color) });
-      tip(c, `${p.label}: ${fmt(p.value)}`);
-      svg.appendChild(c);
+      svg.appendChild(mk('circle', { cx: x(i), cy: y(p.value), r: pts.length > 40 ? 1.8 : 3, fill: css(color) }));
+      marks.push({ x: x(i), y: y(p.value), label: p.label, text: fmt(p.value) });
     });
     xLabels(cfg, data, x);
+    svg.setAttribute('aria-label', `Çizgi grafiği, ${pts.length} değer, ${fmt(minV)} – ${fmt(maxV)}`);
+    attachTips(host, svg, cfg, marks);
   }
 
   /** Yatay sütun (kategori dağılımı) */
@@ -147,17 +214,19 @@ const Charts = (() => {
     const max = Math.max(...rows.map(d => d.value));
     const labelW = Math.min(120, Math.max(64, w * .3));
     const palette = ['--c1', '--c2', '--c3', '--c4', '--c5'];
+    const marks = [];
     rows.forEach((d, i) => {
       const y = i * rowH + 4;
       svg.appendChild(mk('text', { x: 0, y: y + 17, 'font-size': 11, fill: css('--muted') },
         d.label.length > 16 ? d.label.slice(0, 15) + '…' : d.label));
       const bw = Math.max(2, (d.value / max) * (w - labelW - 74));
-      const rect = mk('rect', { x: labelW, y: y + 5, width: bw, height: 15, rx: 3, fill: css(palette[i % palette.length]) });
-      tip(rect, `${d.label}: ${fmt(d.value)}`);
-      svg.appendChild(rect);
+      svg.appendChild(mk('rect', { x: labelW, y: y + 5, width: bw, height: 15, rx: 3, fill: css(palette[i % palette.length]) }));
       svg.appendChild(mk('text', { x: labelW + bw + 6, y: y + 17, 'font-size': 11, fill: css('--text') }, fmt(d.value)));
+      marks.push({ x: labelW + bw / 2, y: y + 12, label: d.label, text: fmt(d.value) });
     });
+    svg.setAttribute('aria-label', `Yatay sütun grafiği, ${rows.length} kategori`);
     host.appendChild(svg);
+    attachTips(host, svg, { w, h, pad: { t: 0, b: 0, l: 0, r: 0 } }, marks, { vertical: false });
   }
 
   return { bar, line, hbar };

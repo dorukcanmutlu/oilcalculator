@@ -81,11 +81,16 @@ const Store = (() => {
   }
   function clear() { records = []; save(); }
 
-  const stations = () => [...new Set(records.map(r => r.station).filter(Boolean))].sort();
+  const stationsList = () => [...new Set(records.map(r => r.station).filter(Boolean))].sort();
 
   /* ---- Filtreleme ---- */
   function filter(range) {
     if (!range || range === 'all') return all();
+    if (typeof range === 'object') {           // { from, to } özel aralık
+      const from = range.from || '0000-01-01';
+      const to = range.to || '9999-12-31';
+      return records.filter(r => r.date >= from && r.date <= to);
+    }
     const now = new Date();
     let from;
     if (range === 'ytd') from = `${now.getFullYear()}-01-01`;
@@ -94,6 +99,15 @@ const Store = (() => {
       from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
     }
     return records.filter(r => r.date >= from);
+  }
+
+  /** Kayıtlarda kullanılan yakıt türleri */
+  const fuels = () => [...new Set(records.map(r => r.fuel).filter(Boolean))].sort();
+
+  /** Belirli bir tarihten önceki son kilometre kaydı */
+  function lastOdoBefore(date, excludeId) {
+    const rows = records.filter(r => r.odo != null && r.id !== excludeId && (!date || r.date <= date));
+    return rows.length ? rows[rows.length - 1] : null;
   }
 
   /* ---- Tüketim: iki tam depo arası ---- */
@@ -271,5 +285,5 @@ const Store = (() => {
       .sort((a, b) => b.spend - a.spend);
   }
 
-  return { load, all, filter, upsert, remove, replaceAll, addMany, clear, stations, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
+  return { load, all, filter, upsert, remove, replaceAll, addMany, clear, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
 })();

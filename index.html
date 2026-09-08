@@ -25,9 +25,21 @@
       <option value="6">Son 6 ay</option>
       <option value="12" selected>Son 12 ay</option>
       <option value="ytd">Bu yıl</option>
+      <option value="custom">Özel aralık…</option>
     </select>
   </div>
 </header>
+
+<div class="subbar" id="customRange" hidden>
+  <label class="field">
+    <span>Başlangıç</span>
+    <input type="date" id="rangeFrom">
+  </label>
+  <label class="field">
+    <span>Bitiş</span>
+    <input type="date" id="rangeTo">
+  </label>
+</div>
 
 <main>
   <!-- ÖZET -->
@@ -52,6 +64,7 @@
         <label class="field">
           <span>Kilometre</span>
           <input type="number" id="f-odo" inputmode="numeric" step="1" min="0" placeholder="örn. 128500">
+          <small class="field-hint" id="odoHint"></small>
         </label>
       </div>
 
@@ -111,6 +124,18 @@
       <div class="list-head">
         <input type="search" id="searchInput" placeholder="İstasyon / not ara…">
         <span class="count" id="listCount"></span>
+      </div>
+      <div class="list-filters">
+        <label class="sr-only" for="sortSelect">Sıralama</label>
+        <select id="sortSelect">
+          <option value="date-desc">Tarih: yeni → eski</option>
+          <option value="date-asc">Tarih: eski → yeni</option>
+          <option value="total-desc">Tutar: çok → az</option>
+          <option value="liters-desc">Litre: çok → az</option>
+          <option value="price-desc">Birim fiyat: yüksek → düşük</option>
+        </select>
+        <label class="sr-only" for="fuelFilter">Yakıt türü</label>
+        <select id="fuelFilter"><option value="">Tüm yakıtlar</option></select>
       </div>
       <ul class="records" id="recordList"></ul>
       <p class="empty" id="listEmpty" hidden>Bu dönemde kayıt yok.</p>

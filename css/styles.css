@@ -125,6 +125,19 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .card-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
 .card-head select { width: auto; padding: 6px 8px; font-size: 13px; }
 .list-head { display: flex; gap: 8px; align-items: center; }
+.list-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.list-filters select { font-size: 13px; padding: 8px 10px; }
+.field-hint { color: var(--muted); font-size: 11px; min-height: 14px; }
+.subbar {
+  position: sticky; top: 0; z-index: 19;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.toast .toast-btn {
+  background: none; border: 0; color: var(--accent); font-weight: 700;
+  margin-left: 12px; padding: 0; cursor: pointer; font-size: 13px;
+}
+.toast { pointer-events: auto; }
 .count { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .records { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .records li {
@@ -141,7 +154,15 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .empty { color: var(--muted); text-align: center; padding: 18px 0; margin: 0; }
 
 /* Charts */
-.chart { width: 100%; overflow: hidden; }
+.chart { width: 100%; overflow: hidden; position: relative; }
+.chart-tip {
+  position: absolute; z-index: 5; pointer-events: none;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: var(--text); color: var(--bg);
+  padding: 5px 9px; border-radius: 8px; font-size: 12px; white-space: nowrap;
+  box-shadow: var(--shadow);
+}
+.chart-tip b { font-weight: 650; margin-right: 4px; }
 .chart svg { display: block; width: 100%; height: auto; }
 .chart .no-data { color: var(--muted); font-size: 13px; padding: 22px 0; text-align: center; }
 
