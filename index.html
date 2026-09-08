@@ -44,6 +44,13 @@
 <main>
   <!-- ÖZET -->
   <section class="view" id="view-ozet">
+    <div class="banner" id="backupBanner" hidden>
+      <div>
+        <strong>Yedek almayı unutma</strong>
+        <span id="backupBannerText"></span>
+      </div>
+      <button class="btn" id="backupNowBtn">Yedek al</button>
+    </div>
     <div class="stats" id="stats"></div>
     <div class="card">
       <h2>Son kayıtlar</h2>
@@ -111,6 +118,8 @@
         <input type="text" id="f-note" placeholder="isteğe bağlı">
       </label>
 
+      <div class="msg warn" id="formWarn" hidden></div>
+
       <div class="actions">
         <button type="submit" class="btn primary" id="saveBtn">Kaydet</button>
         <button type="button" class="btn ghost" id="cancelEditBtn" hidden>Vazgeç</button>
@@ -137,8 +146,33 @@
         <label class="sr-only" for="fuelFilter">Yakıt türü</label>
         <select id="fuelFilter"><option value="">Tüm yakıtlar</option></select>
       </div>
+      <div class="bulkbar" id="bulkBar" hidden>
+        <span id="bulkCount">0 seçili</span>
+        <div class="bulkbar-actions">
+          <button class="btn" data-bulk="partial">Kısmi</button>
+          <button class="btn" data-bulk="full">Tam depo</button>
+          <button class="btn danger" data-bulk="delete">Sil</button>
+        </div>
+      </div>
       <ul class="records" id="recordList"></ul>
       <p class="empty" id="listEmpty" hidden>Bu dönemde kayıt yok.</p>
+      <div class="actions">
+        <button class="btn ghost" id="bulkToggle">Toplu düzenle</button>
+      </div>
+    </div>
+
+    <div class="card notice" id="partialCard" hidden>
+      <h2>Kısmi dolum olabilir</h2>
+      <p class="hint" id="partialText"></p>
+      <div class="actions wrap">
+        <button class="btn primary" id="partialApply">Kısmi olarak işaretle</button>
+        <button class="btn ghost" id="partialDismiss">Şimdilik kapat</button>
+      </div>
+    </div>
+
+    <div class="card notice" id="anomalyCard" hidden>
+      <h2>Kontrol edilmesi gerekenler</h2>
+      <ul class="issues" id="anomalyList"></ul>
     </div>
   </section>
 

@@ -3,6 +3,19 @@ const Store = (() => {
   const KEY = 'yakit-takip:v1';
   let records = [];
 
+  const META_KEY = 'yakit-takip:meta';
+
+  /** Yedek zamanı gibi küçük ayarlar */
+  function meta() {
+    try { return JSON.parse(localStorage.getItem(META_KEY)) || {}; }
+    catch (e) { return {}; }
+  }
+  function setMeta(patch) {
+    const next = { ...meta(), ...patch };
+    try { localStorage.setItem(META_KEY, JSON.stringify(next)); } catch (e) { /* yoksay */ }
+    return next;
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -108,6 +121,104 @@ const Store = (() => {
   function lastOdoBefore(date, excludeId) {
     const rows = records.filter(r => r.odo != null && r.id !== excludeId && (!date || r.date <= date));
     return rows.length ? rows[rows.length - 1] : null;
+  }
+
+  /* ---- Doğrulama ---- */
+
+  const median = arr => {
+    const v = arr.filter(x => x != null && isFinite(x)).slice().sort((a, b) => a - b);
+    if (!v.length) return null;
+    const m = Math.floor(v.length / 2);
+    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+  };
+
+  /**
+   * Bir kaydın olası giriş hatalarını bulur. Kaydı engellemez, uyarı döndürür:
+   * geriye giden kilometre, günlük mesafe sıçraması, aynı güne ikinci kayıt,
+   * tutar/litre/fiyat tutarsızlığı, fiyat sapması, mantıksız tüketim,
+   * depo hacmini aşan litre.
+   */
+  function validate(rec, { tankSize } = {}) {
+    const r = normalize(rec);
+    const others = records.filter(x => x.id !== r.id);
+    const out = [];
+    if (!r.date) return [{ text: 'Tarih okunamadı' }];
+    if (r.date > U.todayISO()) out.push({ text: 'Tarih ileri bir günde' });
+    if (others.some(x => x.date === r.date)) out.push({ text: 'Bu tarihte başka bir kayıt var' });
+
+    const prev = [...others].reverse().find(x => x.odo != null && x.date <= r.date);
+    if (r.odo != null && prev) {
+      const diff = r.odo - prev.odo;
+      const days = Math.max(1, Math.round((new Date(r.date) - new Date(prev.date)) / 86400000));
+      if (diff < 0) {
+        out.push({ text: `Kilometre geriye gidiyor: son kayıt ${U.n0.format(prev.odo)} km` });
+      } else if (diff / days > 1500) {
+        out.push({ text: `Günde ${U.n0.format(Math.round(diff / days))} km — kilometre yanlış girilmiş olabilir` });
+      } else if (diff === 0) {
+        out.push({ text: 'Kilometre bir önceki kayıtla aynı' });
+      }
+      if (diff > 0 && r.liters > 0 && r.full) {
+        const l100 = r.liters / diff * 100;
+        if (l100 > 30 || l100 < 2) {
+          out.push({ text: `Bu kayıt ${U.n1.format(l100)} L/100km tüketim veriyor — litre ya da kilometre hatalı olabilir` });
+        }
+      }
+    }
+
+    if (r.total != null && r.liters != null && r.unitPrice != null && r.total > 0) {
+      const fark = Math.abs(r.liters * r.unitPrice - r.total) / r.total;
+      if (fark > 0.02) out.push({ text: 'Tutar, litre × birim fiyat ile uyuşmuyor' });
+    }
+
+    // Kıyas, bu kayıttan hemen önceki fiyat olmalı; en son fiyatla kıyaslamak
+    // 9 ay önceki kayıtları da "sapmış" gösterir.
+    const prevPriced = others.filter(x => x.unitPrice != null && x.date <= r.date).pop();
+    const lastPrice = prevPriced?.unitPrice;
+    if (r.unitPrice != null && lastPrice) {
+      const sapma = (r.unitPrice - lastPrice) / lastPrice;
+      if (Math.abs(sapma) > 0.25) {
+        out.push({ text: `Birim fiyat bir önceki kayda göre %${U.n0.format(Math.abs(sapma) * 100)} ${sapma > 0 ? 'yüksek' : 'düşük'} (${U.dateLabel(prevPriced.date)}: ₺${U.n2.format(lastPrice)}/L)` });
+      }
+    }
+
+    if (tankSize && r.liters != null && r.liters > tankSize * 1.05) {
+      out.push({ text: `Litre depo hacmini (${U.n0.format(tankSize)} L) aşıyor` });
+    }
+    return out;
+  }
+
+  /** Mevcut kayıtlar içinde uyarı üreten olanlar */
+  function anomalies(list, opts) {
+    return list.map(r => ({ rec: r, issues: validate(r, opts) }))
+      .filter(x => x.issues.length);
+  }
+
+  /**
+   * Litresi medyanın %60'ından az olan dolumlar büyük olasılıkla kısmi;
+   * Excel'den gelen kayıtlarda "tam depo" bilgisi olmadığı için öneri sunar.
+   */
+  function suggestPartial(list) {
+    const med = median(list.map(r => r.liters));
+    if (!med) return [];
+    return list.filter(r => r.full && r.liters != null && r.liters < med * 0.6);
+  }
+
+  /** Seçili kayıtların tam/kısmi depo işaretini değiştirir */
+  function setFull(ids, full) {
+    const set = new Set(ids);
+    let n = 0;
+    records = records.map(r => (set.has(r.id) ? (n++, { ...r, full }) : r));
+    save();
+    return n;
+  }
+
+  /** Seçili kayıtları siler, silinenleri döndürür (geri alma için) */
+  function removeMany(ids) {
+    const set = new Set(ids);
+    const removed = records.filter(r => set.has(r.id));
+    records = records.filter(r => !set.has(r.id));
+    save();
+    return removed;
   }
 
   /* ---- Tüketim: iki tam depo arası ---- */
@@ -285,5 +396,5 @@ const Store = (() => {
       .sort((a, b) => b.spend - a.spend);
   }
 
-  return { load, all, filter, upsert, remove, replaceAll, addMany, clear, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
+  return { load, all, filter, upsert, remove, removeMany, replaceAll, addMany, clear, meta, setMeta, validate, anomalies, suggestPartial, setFull, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
 })();

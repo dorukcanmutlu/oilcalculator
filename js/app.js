@@ -3,6 +3,11 @@
   const $ = U.el;
   let range = '12';
   let parsed = null; // içe aktarma durumu: {rows, headerIdx, map}
+  let bulkMode = false;
+  let partialDismissed = false;
+  let partialCandidates = [];
+  let warnKey = null;
+  const selected = new Set();
 
   /* ---------- Görünüm yönetimi ---------- */
   const TITLES = { ozet: 'Özet', ekle: 'Yakıt ekle', kayitlar: 'Kayıtlar', grafikler: 'Grafikler', analiz: 'Analiz', veri: 'Veri' };
@@ -62,21 +67,26 @@
         <div class="sub">${U.esc(c.sub || '')}</div>
       </div>`).join('');
 
+    renderBackupBanner();
+
     const recent = list.slice(-5).reverse();
     $('#recentList').innerHTML = recent.length ? recent.map(r => rowHTML(r)).join('')
       : '<li class="empty">Henüz kayıt yok. “Ekle” sekmesinden başla.</li>';
   }
 
-  function rowHTML(r, withActions) {
+  function rowHTML(r, { actions = false, pick = false, issues = null } = {}) {
     const bits = [U.liters(r.liters)];
     if (r.unitPrice != null) bits.push('₺' + U.n2.format(r.unitPrice) + '/L');
     if (r.odo != null) bits.push(U.km(r.odo));
     if (!r.full) bits.push('kısmi');
-    return `<li data-id="${U.esc(r.id)}">
-      <div class="rec-main">${U.esc(r.station || r.fuel)} <span style="color:var(--muted);font-weight:500">· ${U.esc(U.dateLabel(r.date))}</span></div>
+    const flag = issues && issues.length
+      ? ` <span class="rec-flag" title="${U.esc(issues.map(i => i.text).join(' · '))}">⚠</span>` : '';
+    return `<li data-id="${U.esc(r.id)}" class="${pick ? 'selectable' : ''}">
+      ${pick ? `<input type="checkbox" class="pick" ${selected.has(r.id) ? 'checked' : ''} aria-label="Seç">` : ''}
+      <div class="rec-main">${U.esc(r.station || r.fuel)} <span style="color:var(--muted);font-weight:500">· ${U.esc(U.dateLabel(r.date))}</span>${flag}</div>
       <div class="rec-sub">${U.esc(bits.join(' · '))}${r.note ? ' · ' + U.esc(r.note) : ''}</div>
       <div class="rec-amount">${U.esc(U.money(r.total))}</div>
-      ${withActions ? `<div class="rec-actions"><button class="edit">Düzenle</button><button class="del">Sil</button></div>` : ''}
+      ${actions && !pick ? `<div class="rec-actions"><button class="edit">Düzenle</button><button class="del">Sil</button></div>` : ''}
     </li>`;
   }
 
@@ -94,10 +104,44 @@
     let list = current().slice().sort(SORTS[$('#sortSelect').value] || SORTS['date-desc']);
     if (fuel) list = list.filter(r => r.fuel === fuel);
     if (q) list = list.filter(r => (r.station + ' ' + r.note + ' ' + r.fuel).toLocaleLowerCase('tr').includes(q));
-    $('#recordList').innerHTML = list.map(r => rowHTML(r, true)).join('');
+    const issueMap = new Map(Store.anomalies(list).map(x => [x.rec.id, x.issues]));
+    $('#recordList').innerHTML = list.map(r =>
+      rowHTML(r, { actions: true, pick: bulkMode, issues: issueMap.get(r.id) })).join('');
     $('#listEmpty').hidden = list.length > 0;
     const spend = list.reduce((a, r) => a + (r.total || 0), 0);
     $('#listCount').textContent = list.length ? `${list.length} kayıt · ${U.money(spend)}` : '';
+    renderAnomalies(list, issueMap);
+    renderPartialSuggestion(list);
+    updateBulkBar();
+  }
+
+  function renderAnomalies(list, issueMap) {
+    const rows = list.filter(r => issueMap.has(r.id));
+    $('#anomalyCard').hidden = rows.length === 0;
+    if (!rows.length) return;
+    $('#anomalyList').innerHTML = rows.map(r => `
+      <li data-id="${U.esc(r.id)}">
+        <span class="issue-date">${U.esc(U.dateLabel(r.date))} · ${U.esc(U.money(r.total))}</span>
+        <span class="issue-text">${U.esc(issueMap.get(r.id).map(i => i.text).join(' · '))}</span>
+        <button class="edit">Düzelt</button>
+      </li>`).join('');
+  }
+
+  function renderPartialSuggestion(list) {
+    if (partialDismissed) { $('#partialCard').hidden = true; return; }
+    const cand = Store.suggestPartial(list);
+    $('#partialCard').hidden = cand.length === 0;
+    if (!cand.length) return;
+    partialCandidates = cand.map(r => r.id);
+    $('#partialText').textContent =
+      `${cand.length} dolumun litresi ortalamanın belirgin altında (${cand.map(r => U.n1.format(r.liters) + ' L').slice(0, 4).join(', ')}${cand.length > 4 ? '…' : ''}). ` +
+      'Bunlar depoyu tam doldurmadığın alımlarsa işaretleyelim; "dolum arası" tüketim hesabı ancak o zaman doğru çalışır.';
+  }
+
+  function updateBulkBar() {
+    $('#bulkBar').hidden = !bulkMode;
+    $('#bulkToggle').textContent = bulkMode ? 'Toplu düzenlemeyi kapat' : 'Toplu düzenle';
+    $('#bulkCount').textContent = `${selected.size} seçili`;
   }
 
   function renderStations() {
@@ -218,6 +262,33 @@
       </table>` : '<p class="empty">Bu dönemde kayıt yok.</p>';
   }
 
+  /** Uzun süre ya da çok kayıt boyunca yedek alınmadıysa Özet'te hatırlatır. */
+  function renderBackupBanner() {
+    const count = Store.all().length;
+    const m = Store.meta();
+    const banner = $('#backupBanner');
+    if (!count) { banner.hidden = true; return; }
+    const days = m.lastBackupAt
+      ? Math.floor((Date.now() - new Date(m.lastBackupAt)) / 86400000) : null;
+    const newRecords = count - (m.lastBackupCount || 0);
+    const needed = days == null || days >= 30 || newRecords >= 10;
+    banner.hidden = !needed;
+    if (!needed) return;
+    $('#backupBannerText').textContent = days == null
+      ? `${count} kayıt var, henüz hiç yedek almadın. Tarayıcı verileri silinirse hepsi gider.`
+      : `Son yedek ${days} gün önce${newRecords > 0 ? `, o günden beri ${newRecords} yeni kayıt` : ''}.`;
+  }
+
+  function markBackedUp() {
+    Store.setMeta({ lastBackupAt: new Date().toISOString(), lastBackupCount: Store.all().length });
+    renderBackupBanner();
+  }
+
+  $('#backupNowBtn').addEventListener('click', () => {
+    show('veri');
+    $('#exportJsonBtn').click();
+  });
+
   /* ---------- Form ---------- */
   const F = {
     id: $('#f-id'), date: $('#f-date'), odo: $('#f-odo'), liters: $('#f-liters'),
@@ -246,6 +317,8 @@
     if (last) { F.fuel.value = last.fuel; F.station.value = last.station; }
     $('#saveBtn').textContent = 'Kaydet';
     $('#cancelEditBtn').hidden = true;
+    $('#formWarn').hidden = true;
+    warnKey = null;
     updateOdoHint();
   }
 
@@ -293,6 +366,21 @@
     };
     if (!rec.date) return toast('Tarih gerekli');
     if (!U.parseNumber(rec.total) && !U.parseNumber(rec.liters)) return toast('Tutar ya da litre gir');
+
+    // Şüpheli girişlerde bir kez uyar, ikinci basışta kaydet
+    const warnings = Store.validate({ ...rec, id: F.id.value || 'yeni' });
+    const key = JSON.stringify(rec);
+    if (warnings.length && warnKey !== key) {
+      warnKey = key;
+      $('#formWarn').hidden = false;
+      $('#formWarn').innerHTML = '<strong>Kontrol et:</strong><ul>' +
+        warnings.map(w => `<li>${U.esc(w.text)}</li>`).join('') + '</ul>';
+      $('#saveBtn').textContent = 'Yine de kaydet';
+      return;
+    }
+    warnKey = null;
+    $('#formWarn').hidden = true;
+
     const editing = !!F.id.value;
     Store.upsert(rec);
     resetForm(); renderAll(); renderStations();
@@ -318,6 +406,54 @@
       });
     } else if (btn.dataset.goto) show(btn.dataset.goto);
     else if (btn.classList.contains('tab')) show(btn.dataset.view);
+  });
+
+  $('#bulkToggle').addEventListener('click', () => {
+    bulkMode = !bulkMode;
+    selected.clear();
+    renderList();
+  });
+
+  $('#recordList').addEventListener('change', e => {
+    if (!e.target.classList.contains('pick')) return;
+    const id = e.target.closest('li[data-id]').dataset.id;
+    e.target.checked ? selected.add(id) : selected.delete(id);
+    updateBulkBar();
+  });
+
+  $('#bulkBar').addEventListener('click', e => {
+    const op = e.target.dataset?.bulk;
+    if (!op) return;
+    const ids = [...selected];
+    if (!ids.length) return toast('Önce kayıt seç');
+    if (op === 'delete') {
+      const removed = Store.removeMany(ids);
+      selected.clear();
+      renderAll();
+      toast(`${removed.length} kayıt silindi`, {
+        label: 'Geri al',
+        fn: () => { Store.addMany(removed); renderAll(); toast('Geri alındı'); }
+      });
+    } else {
+      const full = op === 'full';
+      const n = Store.setFull(ids, full);
+      selected.clear();
+      renderAll();
+      toast(`${n} kayıt ${full ? 'tam depo' : 'kısmi dolum'} olarak işaretlendi`);
+    }
+  });
+
+  $('#partialApply').addEventListener('click', () => {
+    const n = Store.setFull(partialCandidates, false);
+    renderAll();
+    toast(`${n} kayıt kısmi dolum olarak işaretlendi`, {
+      label: 'Geri al',
+      fn: () => { Store.setFull(partialCandidates, true); renderAll(); }
+    });
+  });
+  $('#partialDismiss').addEventListener('click', () => {
+    partialDismissed = true;
+    $('#partialCard').hidden = true;
   });
 
   $('#searchInput').addEventListener('input', renderList);
@@ -451,10 +587,12 @@
       return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(';')).join('\r\n');
     U.download(`yakit-${U.todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
+    markBackedUp();
   });
 
   $('#exportJsonBtn').addEventListener('click', () => {
     U.download(`yakit-yedek-${U.todayISO()}.json`, JSON.stringify(Store.all(), null, 2), 'application/json');
+    markBackedUp();
   });
 
   $('#restoreBtn').addEventListener('click', () => $('#restoreInput').click());
