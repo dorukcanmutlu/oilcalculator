@@ -55,6 +55,13 @@
       </div>
       <button class="btn" id="backupNowBtn">Yedek al</button>
     </div>
+    <div class="banner" id="odoBanner" hidden>
+      <div>
+        <strong>Kilometre girmeyi unutma</strong>
+        <span id="odoBannerText"></span>
+      </div>
+      <button class="btn" id="odoNowBtn">Gir</button>
+    </div>
     <div class="stats" id="stats"></div>
     <div class="card">
       <h2>Son kayıtlar</h2>
@@ -68,9 +75,19 @@
     <div class="segmented" id="entryMode">
       <button type="button" data-mode="fuel" class="on">Yakıt</button>
       <button type="button" data-mode="expense">Gider</button>
+      <button type="button" data-mode="reading">Km</button>
     </div>
     <form class="card form" id="entryForm" autocomplete="off">
       <input type="hidden" id="f-id">
+
+      <div class="receipt" id="receiptRow">
+        <button type="button" class="btn" id="receiptBtn">
+          <span aria-hidden="true">📷</span> Fiş fotoğrafı
+        </button>
+        <input type="file" id="receiptInput" accept="image/*" capture="environment" hidden>
+        <img id="receiptThumb" alt="Seçilen fiş" hidden>
+        <p class="hint" id="receiptMsg">Fişi çek, tarih/litre/fiyat/tutar kendiliğinden dolsun. Kilometreyi sen giriyorsun.</p>
+      </div>
       <div class="grid">
         <label class="field">
           <span>Tarih</span>
@@ -166,6 +183,30 @@
       </div>
       <p class="hint">Bakım, sigorta, lastik gibi yakıt dışı giderler Analiz sekmesinde toplam araç maliyetine katılır.</p>
     </form>
+
+    <form class="card form" id="readingForm" autocomplete="off" hidden>
+      <input type="hidden" id="k-id">
+      <div class="grid">
+        <label class="field">
+          <span>Tarih</span>
+          <input type="date" id="k-date" required>
+        </label>
+        <label class="field">
+          <span>Kilometre</span>
+          <input type="number" id="k-odo" inputmode="numeric" step="1" min="0" required>
+          <small class="field-hint" id="kOdoHint"></small>
+        </label>
+      </div>
+      <label class="field">
+        <span>Not</span>
+        <input type="text" id="k-note" placeholder="isteğe bağlı">
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn primary" id="readingSaveBtn">Kilometreyi kaydet</button>
+        <button type="button" class="btn ghost" id="readingCancelBtn" hidden>Vazgeç</button>
+      </div>
+      <p class="hint">Haftada bir kilometre girmen aylık yol grafiğini gerçek ölçüme dayandırır; dolum aralarını tahminle doldurmak gerekmez.</p>
+    </form>
   </section>
 
   <!-- KAYITLAR -->
@@ -200,6 +241,11 @@
       <div class="actions">
         <button class="btn ghost" id="bulkToggle">Toplu düzenle</button>
       </div>
+    </div>
+
+    <div class="card" id="readingListCard" hidden>
+      <h2>Kilometre okumaları <small id="readingCountLabel"></small></h2>
+      <ul class="records" id="readingList"></ul>
     </div>
 
     <div class="card" id="expenseListCard" hidden>
@@ -343,6 +389,35 @@
     </div>
 
     <div class="card">
+      <h2>Fiş okuma</h2>
+      <p class="msg" id="aiStatus"></p>
+      <details id="aiAdvanced">
+        <summary>Kendi API anahtarımla kullan</summary>
+        <p class="hint">Uygulamayı claude.ai bağlantısı dışında (örneğin GitHub Pages'te) açtığında fişi okuyabilmek için
+          kendi Anthropic API anahtarını girebilirsin. Anahtar yalnızca bu cihazın tarayıcısında saklanır, hiçbir yere gönderilmez.
+          Tarayıcılar api.anthropic.com'a doğrudan isteği engelleyebilir; o durumda kendi ara sunucunun adresini uç nokta olarak ver.</p>
+        <label class="field">
+          <span>API anahtarı</span>
+          <input type="password" id="ai-key" placeholder="sk-ant-…" autocomplete="off">
+        </label>
+        <div class="grid">
+          <label class="field">
+            <span>Model</span>
+            <input type="text" id="ai-model" placeholder="claude-opus-5">
+          </label>
+          <label class="field">
+            <span>Uç nokta</span>
+            <input type="text" id="ai-endpoint" placeholder="https://api.anthropic.com/v1/messages">
+          </label>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="aiSaveBtn">Kaydet</button>
+          <button class="btn ghost" id="aiClearBtn">Anahtarı sil</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
       <h2>Excel / CSV içe aktar</h2>
       <p class="hint">.xlsx veya .csv dosyanı seç, sonra sütunları eşleştir. Kayıtlar <b id="importTarget">aktif araca</b> eklenir.</p>
       <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.txt">
@@ -405,6 +480,7 @@
 <script src="js/xlsx-lite.js"></script>
 <script src="js/xlsx-write.js"></script>
 <script src="js/importer.js"></script>
+<script src="js/receipt.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

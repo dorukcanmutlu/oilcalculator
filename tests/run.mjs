@@ -251,6 +251,95 @@ group('importer: sütun eşleştirme ve satır üretimi', () => {
   eq('tırnak içindeki virgül', parsed[1][2], 'ilk, dolum');
 });
 
+/* ---------------- kilometre okumaları ---------------- */
+group('store: kilometre okumaları', () => {
+  const { Store } = makeEnv();
+  Store.load();
+  Store.addMany(FIXTURE);
+
+  Store.upsertReading({ date: '2026-02-01', odo: 284900 });
+  Store.upsertReading({ date: '2026-02-20', odo: 285600 });
+  eq('okuma sayısı', Store.readings().length, 2);
+
+  // Çizelge: dolumlar + okumalar, tarih sırasında
+  const tl = Store.odometerTimeline(Store.filter('all'), Store.readings());
+  eq('çizelge nokta sayısı', tl.length, 7);
+  ok('çizelge tarih sırasında', tl.every((p, i) => i === 0 || tl[i - 1].date <= p.date));
+  ok('çizelge kilometre sırasında', tl.every((p, i) => i === 0 || tl[i - 1].odo <= p.odo));
+
+  // Aynı güne düşen dolum ve okuma iki ayrı nokta olarak kalır: aradaki fark gerçek yoldur
+  Store.upsertReading({ date: '2026-01-07', odo: 283500 });
+  const tl2 = Store.odometerTimeline(Store.filter('all'), Store.readings());
+  eq('aynı günde iki nokta korunur', tl2.filter(p => p.date === '2026-01-07').length, 2);
+  eq('küçük olan önce', tl2.find(p => p.date === '2026-01-07').odo, 283420);
+  const tl3 = Store.odometerTimeline(Store.filter('all'), [{ date: '2026-01-07', odo: 283420 }]);
+  eq('birebir aynı nokta tekrarlanmaz', tl3.filter(p => p.date === '2026-01-07').length, 1);
+
+  // Okumalar mesafeyi ve aylık dağılımı değiştirir
+  Store.upsertReading({ date: '2026-03-10', odo: 286500 });
+  const st = Store.stats(Store.filter('all'), Store.readings());
+  eq('mesafe son okumaya kadar', st.distance, 286500 - 283420);
+  const km = Store.monthlyDistance(Store.filter('all'), Store.readings());
+  const toplam = [...km.values()].reduce((a, v) => a + v, 0);
+  near('aylık dağılım toplamı mesafeye eşit', toplam, st.distance, 2);
+  ok('yakıt alınmayan ayda da yol var', (km.get('2026-03') || 0) > 0);
+
+  // Yedek turu okumaları taşır
+  const backup = Store.exportAll();
+  eq('yedekte okuma sayısı', backup.readings.length, 4);
+  Store.importAll(backup);
+  eq('geri yüklemeden sonra okumalar', Store.readings().length, 4);
+
+  const one = Store.readings()[0];
+  Store.removeReading(one.id);
+  eq('okuma silindi', Store.readings().length, 3);
+});
+
+/* ---------------- fiş okuma ---------------- */
+group('receipt: model çıktısını temizleme', () => {
+  const { Receipt } = makeEnv();
+
+  eq('kod bloğundan JSON ayıklama',
+    Receipt.parseJson('```json\n{"liters": 42.4}\n```').liters, 42.4);
+  eq('metin arasından JSON ayıklama',
+    Receipt.parseJson('İşte sonuç: {"total": 2500.4} umarım yardımcı olur').total, 2500.4);
+  ok('JSON yoksa hata', (() => { try { Receipt.parseJson('hiç json yok'); return false; } catch { return true; } })());
+
+  const tam = Receipt.clean({
+    date: '15.02.2026', liters: 42.43, unitPrice: 58.93, total: 2500.4,
+    station: 'OPET', fuel: 'Motorin', confidence: 'high'
+  });
+  eq('tarih ISO', tam.values.date, '2026-02-15');
+  eq('litre', tam.values.liters, 42.43);
+  eq('tutarlı fişte uyarı yok', tam.warnings.length, 0);
+
+  const eksik = Receipt.clean({ liters: 40, total: 2400, confidence: 'high' });
+  eq('birim fiyat tutardan hesaplanır', eksik.values.unitPrice, 60);
+
+  const eksik2 = Receipt.clean({ unitPrice: 60, total: 2400, confidence: 'high' });
+  eq('litre tutardan hesaplanır', eksik2.values.liters, 40);
+
+  const tutarsiz = Receipt.clean({ liters: 40, unitPrice: 12, total: 2400, confidence: 'high' });
+  eq('tutarsızlıkta birim fiyat düzeltilir', tutarsiz.values.unitPrice, 60);
+  ok('tutarsızlık uyarısı', tutarsiz.warnings.some(w => /uymadı/.test(w)));
+
+  const saçma = Receipt.clean({ liters: 9999, unitPrice: 0.2, total: 5, confidence: 'medium' });
+  eq('aralık dışı litre atılır', saçma.values.liters, null);
+  eq('aralık dışı tutar atılır', saçma.values.total, null);
+  ok('okunamadı uyarısı', saçma.warnings.some(w => /okunamadı/.test(w)));
+
+  const belirsiz = Receipt.clean({ total: 2000, liters: 35, confidence: 'low' });
+  ok('düşük güven uyarısı', belirsiz.warnings.some(w => /gözden geçir/.test(w)));
+
+  const ileri = Receipt.clean({ date: '2099-01-01', total: 2000, liters: 35, confidence: 'high' });
+  ok('ileri tarih uyarısı', ileri.warnings.some(w => /ileri bir gün/.test(w)));
+
+  const bozuk = Receipt.clean({ fuel: 'Uçak yakıtı', station: '   ', confidence: 'sallama' });
+  eq('bilinmeyen yakıt türü atılır', bozuk.values.fuel, '');
+  eq('boş istasyon', bozuk.values.station, '');
+  eq('bilinmeyen güven düşük sayılır', bozuk.values.confidence, 'low');
+});
+
 /* ---------------- xlsx yazıcı ---------------- */
 group('xlsx-write: ZIP ve hücre biçimleri', () => {
   const { XlsxWrite } = makeEnv();

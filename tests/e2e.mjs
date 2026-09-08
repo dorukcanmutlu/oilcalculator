@@ -47,6 +47,17 @@ const ctx = await browser.newContext({
   viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, acceptDownloads: true
 });
 const page = await ctx.newPage();
+
+// Fiş okuma akışını gerçek bir model çağrısı yapmadan denemek için sahte `sample`
+await page.addInitScript(() => {
+  const fake = async () => ({});
+  fake.json = async (prompt, opts) => {
+    window.__receiptImageBytes = opts.images[0].size;
+    return { date: '2026-02-20', liters: 41.2, unitPrice: 59.5, total: 2451.4, station: 'Opet', fuel: 'Motorin', confidence: 'high' };
+  };
+  fake.limits = async () => ({ images: { maxCount: 4 } });
+  window.claude = { use: async name => (name === 'sample' ? fake : null) };
+});
 const errors = [];
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
@@ -98,6 +109,41 @@ try {
   check('geriye giden kilometre uyarısı',
     (await page.textContent('#formWarn')).includes('geriye gidiyor'));
   check('tutar otomatik hesaplandı', (await page.inputValue('#f-total')) === '2360');
+
+  console.log('\nKilometre okuması');
+  await page.click('#entryMode [data-mode="reading"]');
+  await page.fill('#k-odo', '286000');
+  await page.click('#readingSaveBtn');
+  await page.waitForTimeout(400);
+  check('okuma kaydedildi', (await page.evaluate(() => Store.readings().length)) === 1);
+  check('mesafe okumaya kadar uzadı',
+    (await page.evaluate(() => Store.stats(Store.filter('all'), Store.readings()).distance)) === 286000 - 283420);
+
+  console.log('\nFiş fotoğrafı');
+  await page.click('#entryMode [data-mode="fuel"]');
+  // Önceki doğrulama adımından kalan değerleri temizle (olay tetiklemeden:
+  // fill() ile tek tek silmek otomatik hesaplamayı çalıştırıp alanı geri doldurur).
+  await page.evaluate(() => {
+    for (const id of ['f-odo', 'f-liters', 'f-price', 'f-total', 'f-station']) {
+      document.getElementById(id).value = '';
+    }
+  });
+  const png = await page.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 600; c.height = 900;
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, 600, 900);
+    x.fillStyle = '#000'; x.font = '30px sans-serif'; x.fillText('OPET MOTORIN', 30, 60);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  });
+  await page.setInputFiles('#receiptInput', { name: 'fis.png', mimeType: 'image/png', buffer: Buffer.from(png) });
+  await page.waitForTimeout(1200);
+  check('fişten litre dolduruldu', (await page.inputValue('#f-liters')) === '41.2');
+  check('fişten tutar dolduruldu', (await page.inputValue('#f-total')) === '2451.4');
+  check('fişten tarih dolduruldu', (await page.inputValue('#f-date')) === '2026-02-20');
+  check('kilometre alanına dokunulmadı', (await page.inputValue('#f-odo')) === '');
+  check('fotoğraf küçültülerek gönderildi',
+    (await page.evaluate(() => window.__receiptImageBytes)) < 400_000);
 
   console.log('\nGider ve Excel çıktısı');
   await page.click('#entryMode [data-mode="expense"]');

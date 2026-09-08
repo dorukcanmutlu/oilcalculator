@@ -38,6 +38,7 @@ const Store = (() => {
     sort();
     migrateVehicles();
     loadExpenses();
+    loadReadings();
     activeId = vehicleList.some(v => v.id === meta().activeVehicle)
       ? meta().activeVehicle
       : (vehicleList[0]?.id || null);
@@ -55,6 +56,11 @@ const Store = (() => {
       const id = vehicleList[0].id;
       records = records.map(r => (r.vehicleId ? r : { ...r, vehicleId: id }));
       save();
+    }
+    if (vehicleList.length && readingList.some(x => !x.vehicleId)) {
+      const id = vehicleList[0].id;
+      readingList = readingList.map(x => (x.vehicleId ? x : { ...x, vehicleId: id }));
+      saveReadings();
     }
     if (vehicleList.length && expenseList.some(x => !x.vehicleId)) {
       const id = vehicleList[0].id;
@@ -165,6 +171,86 @@ const Store = (() => {
     return map;
   }
 
+  /* ---- Kilometre okumaları (dolumdan bağımsız) ---- */
+  const READING_KEY = 'yakit-takip:readings';
+  let readingList = [];
+
+  function loadReadings() {
+    try {
+      readingList = JSON.parse(localStorage.getItem(READING_KEY)) || [];
+      if (!Array.isArray(readingList)) readingList = [];
+    } catch (e) { readingList = []; }
+    readingList = readingList.map(normalizeReading).filter(x => x.date && x.odo != null);
+    sortReadings();
+  }
+  const saveReadings = () => {
+    try { localStorage.setItem(READING_KEY, JSON.stringify(readingList)); }
+    catch (e) { console.error('Kilometre okumaları yazılamadı', e); }
+  };
+  const sortReadings = () => readingList.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+  const normalizeReading = x => ({
+    id: x.id || U.uid(),
+    vehicleId: x.vehicleId || activeId || null,
+    date: U.parseDate(x.date),
+    odo: U.parseNumber(x.odo),
+    note: (x.note || '').trim()
+  });
+
+  const readings = () => (activeId ? readingList.filter(x => x.vehicleId === activeId) : readingList.slice());
+  const allReadings = () => readingList.slice();
+
+  function upsertReading(x) {
+    ensureVehicle();
+    const r = normalizeReading(x);
+    const i = readingList.findIndex(y => y.id === r.id);
+    if (i >= 0) readingList[i] = r; else readingList.push(r);
+    sortReadings(); saveReadings();
+    return r;
+  }
+  function removeReading(id) {
+    readingList = readingList.filter(x => x.id !== id);
+    saveReadings();
+  }
+  function filterReadings(range) {
+    const mine = readings();
+    if (!range || range === 'all') return mine;
+    if (typeof range === 'object') {
+      const from = range.from || '0000-01-01', to = range.to || '9999-12-31';
+      return mine.filter(x => x.date >= from && x.date <= to);
+    }
+    const now = new Date();
+    let from;
+    if (range === 'ytd') from = `${now.getFullYear()}-01-01`;
+    else {
+      const d = new Date(now.getFullYear(), now.getMonth() - (Number(range) - 1), 1);
+      from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    }
+    return mine.filter(x => x.date >= from);
+  }
+
+  /**
+   * Dolumlardan ve elle girilen okumalardan tek bir kilometre çizelgesi.
+   * Aynı güne düşen iki ayrı ölçüm korunur (aradaki fark gerçek yoldur);
+   * yalnız birebir aynı olan noktalar teke indirilir.
+   */
+  function odometerTimeline(list, extra = []) {
+    const points = [
+      ...list.filter(r => r.odo != null).map(r => ({ date: r.date, odo: r.odo })),
+      ...extra.filter(x => x.odo != null).map(x => ({ date: x.date, odo: x.odo }))
+    ].sort((a, b) => a.date === b.date ? a.odo - b.odo : a.date < b.date ? -1 : 1);
+    return points.filter((p, i) =>
+      i === 0 || p.date !== points[i - 1].date || p.odo !== points[i - 1].odo);
+  }
+
+  /** Son kilometre noktasından bu yana geçen gün (haftalık hatırlatma için) */
+  function daysSinceOdometer() {
+    const points = odometerTimeline(all(), readings());
+    if (!points.length) return null;
+    const last = points[points.length - 1];
+    return Math.floor((Date.now() - new Date(last.date + 'T00:00:00')) / 86400000);
+  }
+
   /* ---- Araçlar ---- */
   const vehicles = () => vehicleList.slice();
   const activeVehicle = () => vehicleList.find(v => v.id === activeId) || null;
@@ -196,7 +282,8 @@ const Store = (() => {
     vehicleList = vehicleList.filter(v => v.id !== id);
     records = records.filter(r => r.vehicleId !== id);
     expenseList = expenseList.filter(x => x.vehicleId !== id);
-    saveVehicles(); save(); saveExpenses();
+    readingList = readingList.filter(x => x.vehicleId !== id);
+    saveVehicles(); save(); saveExpenses(); saveReadings();
     if (activeId === id) setActive(vehicleList[0]?.id || null);
     return vehicleList.length;
   }
@@ -288,7 +375,8 @@ const Store = (() => {
     exportedAt: new Date().toISOString(),
     vehicles: vehicleList,
     records,
-    expenses: expenseList
+    expenses: expenseList,
+    readings: readingList
   });
 
   /** Yedekten geri yükleme: hem eski dizi biçimini hem v2 nesnesini kabul eder. */
@@ -309,7 +397,9 @@ const Store = (() => {
     }
     expenseList = (Array.isArray(data?.expenses) ? data.expenses : [])
       .map(x => normalizeExpense({ ...x, vehicleId: x.vehicleId || activeId })).filter(x => x.date);
-    sort(); sortExpenses(); save(); saveVehicles(); saveExpenses();
+    readingList = (Array.isArray(data?.readings) ? data.readings : [])
+      .map(x => normalizeReading({ ...x, vehicleId: x.vehicleId || activeId })).filter(x => x.date && x.odo != null);
+    sort(); sortExpenses(); sortReadings(); save(); saveVehicles(); saveExpenses(); saveReadings();
     setMeta({ activeVehicle: activeId });
     return records.length;
   }
@@ -338,7 +428,8 @@ const Store = (() => {
 
   /** Belirli bir tarihten önceki son kilometre kaydı */
   function lastOdoBefore(date, excludeId) {
-    const rows = all().filter(r => r.odo != null && r.id !== excludeId && (!date || r.date <= date));
+    const rows = odometerTimeline(all().filter(r => r.id !== excludeId), readings())
+      .filter(p => !date || p.date <= date);
     return rows.length ? rows[rows.length - 1] : null;
   }
 
@@ -365,7 +456,8 @@ const Store = (() => {
     if (r.date > U.todayISO()) out.push({ text: 'Tarih ileri bir günde' });
     if (others.some(x => x.date === r.date)) out.push({ text: 'Bu tarihte başka bir kayıt var' });
 
-    const prev = [...others].reverse().find(x => x.odo != null && x.date <= r.date);
+    const points = odometerTimeline(others, readings());
+    const prev = [...points].reverse().find(p => p.date <= r.date);
     if (r.odo != null && prev) {
       const diff = r.odo - prev.odo;
       const days = Math.max(1, Math.round((new Date(r.date) - new Date(prev.date)) / 86400000));
@@ -488,9 +580,8 @@ const Store = (() => {
    * Aylık gidilen km: iki dolum arasındaki mesafe, aradaki günlere eşit
    * dağıtılarak aylara paylaştırılır (bir aralık iki aya taşabildiği için).
    */
-  function monthlyDistance(list) {
-    const rows = list.filter(r => r.odo != null).slice()
-      .sort((a, b) => a.date === b.date ? a.odo - b.odo : a.date < b.date ? -1 : 1);
+  function monthlyDistance(list, extra = []) {
+    const rows = odometerTimeline(list, extra);
     const map = new Map();
     for (let i = 1; i < rows.length; i++) {
       const km = rows[i].odo - rows[i - 1].odo;
@@ -510,9 +601,9 @@ const Store = (() => {
    * Kayıtlardan türetilen analiz verileri: aylık mesafe ve 100 km maliyeti,
    * kümülatif harcama, fiyat artışının getirdiği ek maliyet ve yıllık tahmin.
    */
-  function analysis(list, expenseRows = []) {
-    const s = stats(list);
-    const km = monthlyDistance(list);
+  function analysis(list, expenseRows = [], readingRows = []) {
+    const s = stats(list, readingRows);
+    const km = monthlyDistance(list, readingRows);
     const expMonths = expenseByMonth(expenseRows);
     const perMonth = byMonth(list).map(m => {
       const avgPrice = m.liters > 0 ? m.spend / m.liters : null;
@@ -525,10 +616,15 @@ const Store = (() => {
         per100: (avgPrice != null && s.lPer100 != null) ? s.lPer100 * avgPrice : null
       };
     });
-    // Yakıt kaydı olmayan aylarda gider varsa onları da tabloya kat
-    for (const [ym, amount] of expMonths) {
+    // Yakıt kaydı olmayan ama gideri ya da ölçülmüş yolu olan ayları da kat
+    for (const ym of new Set([...expMonths.keys(), ...km.keys()])) {
       if (!perMonth.some(m => m.ym === ym)) {
-        perMonth.push({ ym, spend: 0, liters: 0, count: 0, km: 0, expense: amount, avgPrice: null, per100: null });
+        perMonth.push({
+          ym, spend: 0, liters: 0, count: 0,
+          km: Math.round(km.get(ym) || 0),
+          expense: expMonths.get(ym) || 0,
+          avgPrice: null, per100: null
+        });
       }
     }
     perMonth.sort((a, b) => a.ym < b.ym ? -1 : 1);
@@ -588,13 +684,13 @@ const Store = (() => {
   }
 
   /* ---- Özet istatistikler ---- */
-  function stats(list) {
+  function stats(list, extra = []) {
     const spend = sum(list.map(r => r.total));
     const lt = sum(list.map(r => r.liters));
     const segs = consumptionSegments(list);
     const segDist = sum(segs.map(s => s.distance));
     const segLiters = sum(segs.map(s => s.liters));
-    const odos = list.map(r => r.odo).filter(v => v != null);
+    const odos = odometerTimeline(list, extra).map(p => p.odo);
     const months = new Set(list.map(r => r.date.slice(0, 7))).size || 0;
     const avgPrice = lt > 0 ? spend / lt : null;
     const lPer100 = segDist > 0 ? segLiters / segDist * 100 : null;
@@ -647,5 +743,5 @@ const Store = (() => {
       .sort((a, b) => b.spend - a.spend);
   }
 
-  return { load, all, allRecords, ensureVehicle, expenses, allExpenses, upsertExpense, removeExpense, filterExpenses, expenseByType, expenseByMonth, EXPENSE_TYPES, stationPrices, vehicles, activeVehicle, setActive, saveVehicle, removeVehicle, recordCount, exportAll, importAll, filter, upsert, remove, removeMany, replaceAll, addMany, clear, meta, setMeta, validate, anomalies, suggestPartial, setFull, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
+  return { load, all, allRecords, ensureVehicle, readings, allReadings, upsertReading, removeReading, filterReadings, odometerTimeline, daysSinceOdometer, expenses, allExpenses, upsertExpense, removeExpense, filterExpenses, expenseByType, expenseByMonth, EXPENSE_TYPES, stationPrices, vehicles, activeVehicle, setActive, saveVehicle, removeVehicle, recordCount, exportAll, importAll, filter, upsert, remove, removeMany, replaceAll, addMany, clear, meta, setMeta, validate, anomalies, suggestPartial, setFull, stations: stationsList, fuels, lastOdoBefore, stats, byMonth, byStation, consumptionSegments, cumulativeConsumption, monthlyDistance, analysis, normalize };
 })();

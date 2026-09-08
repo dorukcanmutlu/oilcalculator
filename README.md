@@ -25,6 +25,13 @@ veriler telefonun tarayıcısında saklanır.
   (`.xlsx`, `.csv`). Başlık satırı ve sütunlar otomatik tahmin edilir; Türkçe
   sayı (`1.234,56`) ve tarih (`12.02.2025`) biçimleri ile Excel tarih hücreleri
   çözülür. Excel okuma uygulamanın içinde yazılı, dış kütüphane gerekmez.
+- **Fiş fotoğrafından doldurma:** fişin fotoğrafını çek, tarih/litre/birim
+  fiyat/tutar/istasyon alanları kendiliğinden dolsun. Yalnız boş alanlar
+  doldurulur, kilometreye hiç dokunulmaz. Okunan değerler makul aralık ve
+  litre × fiyat = tutar kontrolünden geçirilir.
+- **Kilometre okumaları:** dolumdan bağımsız km girişi. Haftada bir girersen
+  aylık yol grafiği dolum aralarını tahmin etmek yerine ölçüme dayanır; yakıt
+  alınmayan aylarda da yol görünür.
 - **Çoklu araç:** her araç için ayrı kilometre/tüketim hesabı, depo hacmi
   bilgisi, tek dokunuşla araç değiştirme. Tek araç varken seçici görünmez.
 - **Giriş kontrolü:** geriye giden kilometre, aynı güne ikinci kayıt, tutarsız
@@ -79,12 +86,31 @@ Grafikte iki yöntem var:
 
 Her iki durumda da kilometre girilmemiş kayıtlar hesaba katılmaz.
 
+## Fiş okuma nasıl çalışıyor
+
+Fotoğraf telefonda en uzun kenarı 1600 piksele küçültülüp JPEG'e çevrilir,
+sonra iki yoldan biriyle okunur:
+
+- **claude.ai bağlantısında** (yayınlanan Artifact) `sample` yeteneği kullanılır:
+  API anahtarı gerekmez, istek sayfayı açan kişinin Claude hesabından karşılanır
+  ve ilk kullanımda izin sorulur.
+- **Başka bir yerde** (örneğin GitHub Pages) Veri → Fiş okuma bölümünden kendi
+  Anthropic API anahtarını girebilirsin. Anahtar yalnızca o cihazın tarayıcısında
+  saklanır. Tarayıcılar `api.anthropic.com`'a doğrudan isteği engelleyebilir;
+  o durumda aynı ekrandan kendi ara sunucunun adresini uç nokta olarak verebilirsin.
+
+Model yalnızca fişteki alanları JSON olarak döndürür; uygulama gelen değerleri
+aralık kontrolünden geçirir, `litre × birim fiyat ≠ tutar` ise birim fiyatı
+tutardan yeniden hesaplar ve okunamayan alanı boş bırakır. Fotoğraf kaydedilmez.
+
 ## Analiz nasıl hesaplanıyor
 
 - **100 km'nin maliyeti:** ortalama tüketim (L/100 km) × o ayın ortalama birim
   fiyatı. Tüketim sabitken maliyet artışının tamamen fiyattan geldiğini gösterir.
-- **Aylık gidilen yol:** iki dolum arasındaki kilometre farkı, aradaki günlere
-  eşit bölünüp aylara dağıtılır; aylık toplam, gerçek toplam mesafeye eşittir.
+- **Aylık gidilen yol:** ardışık iki kilometre ölçümü (dolum ya da elle girilen
+  okuma) arasındaki fark, aradaki günlere eşit bölünüp aylara dağıtılır; aylık
+  toplam, gerçek toplam mesafeye eşittir. Haftalık okuma girmek bu dağılımı
+  tahmin olmaktan çıkarır.
 - **Fiyat artışının faturası:** her dolumda `litre × (o günkü fiyat − ilk kayıttaki
   fiyat)` toplanır. "Yakıtı hep ilk günkü fiyattan alsaydım ne kadar az öderdim"
   sorusunun karşılığı.
@@ -125,6 +151,7 @@ js/charts.js            bağımlılıksız SVG grafikler
 js/xlsx-lite.js         .xlsx okuyucu (zip + XML), bağımlılıksız
 js/xlsx-write.js        .xlsx yazıcı (stored zip + CRC32 + SpreadsheetML)
 js/importer.js          CSV/XLSX okuma, sütun eşleştirme
+js/receipt.js           fiş fotoğrafını okuma (sample yeteneği ya da API anahtarı)
 js/app.js               arayüz mantığı
 sw.js, manifest.webmanifest, icons/   PWA dosyaları
 tests/run.mjs           birim testler        tests/e2e.mjs   tarayıcı testi

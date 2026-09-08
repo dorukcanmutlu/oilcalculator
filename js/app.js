@@ -46,6 +46,7 @@
     renderList();
     renderStations();
     renderExpenses();
+    renderReadings();
     updateOdoHint();
     if (!$('#view-grafikler').hidden) renderCharts();
     if (!$('#view-analiz').hidden) renderAnalysis();
@@ -53,7 +54,7 @@
 
   function renderStats() {
     const list = current();
-    const s = Store.stats(list);
+    const s = Store.stats(list, Store.filterReadings(range));
     const cards = [
       { label: 'Toplam harcama', value: U.money(s.spend), sub: `${s.count} alım · ${s.months} ay` },
       { label: 'Toplam yakıt', value: U.liters(s.liters), sub: s.monthlySpend ? `Aylık ort. ${U.money(s.monthlySpend)}` : '' },
@@ -70,6 +71,7 @@
       </div>`).join('');
 
     renderBackupBanner();
+    renderOdoBanner();
 
     const recent = list.slice(-5).reverse();
     $('#recentList').innerHTML = recent.length ? recent.map(r => rowHTML(r)).join('')
@@ -205,7 +207,7 @@
 
   function renderAnalysis() {
     const list = current();
-    const a = Store.analysis(list, Store.filterExpenses(range));
+    const a = Store.analysis(list, Store.filterExpenses(range), Store.filterReadings(range));
     const pct = v => (v == null ? '—' : (v >= 0 ? '+' : '') + U.n0.format(v * 100) + '%');
 
     const cards = [
@@ -326,6 +328,7 @@
   function markBackedUp() {
     Store.setMeta({ lastBackupAt: new Date().toISOString(), lastBackupCount: Store.allRecords().length });
     renderBackupBanner();
+    renderOdoBanner();
   }
 
   $('#backupNowBtn').addEventListener('click', () => {
@@ -347,6 +350,8 @@
     document.querySelectorAll('#entryMode button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
     $('#entryForm').hidden = mode !== 'fuel';
     $('#expenseForm').hidden = mode !== 'expense';
+    $('#readingForm').hidden = mode !== 'reading';
+    if (mode === 'reading') updateReadingHint();
   });
 
   function resetExpenseForm() {
@@ -366,6 +371,9 @@
       amount: X.amount.value, odo: X.odo.value, note: X.note.value
     });
     resetExpenseForm();
+  resetReadingForm();
+  loadAiSettings();
+  renderAiStatus();
     renderAll();
     toast(editing ? 'Gider güncellendi' : 'Gider eklendi');
     if (!editing) show('kayitlar');
@@ -409,6 +417,205 @@
       });
     }
   });
+
+  /* ---------- Fiş fotoğrafı ---------- */
+
+  $('#receiptBtn').addEventListener('click', () => $('#receiptInput').click());
+
+  $('#receiptInput').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const row = $('#receiptRow'), msg = $('#receiptMsg'), thumb = $('#receiptThumb');
+    thumb.src = URL.createObjectURL(file);
+    thumb.hidden = false;
+    row.classList.add('busy');
+    msg.textContent = 'Fiş okunuyor…';
+
+    try {
+      const { values, warnings, provider } = await Receipt.read(file);
+      const filled = [];
+
+      const put = (el, value, label) => {
+        const bosSayilir = !el.value || (el === F.date && el.dataset.auto === '1');
+        if (value == null || value === '' || !bosSayilir) return;
+        el.value = value;
+        el.classList.add('filled');
+        setTimeout(() => el.classList.remove('filled'), 2000);
+        filled.push(label);
+      };
+      put(F.date, values.date, 'tarih');
+      if (values.date) delete F.date.dataset.auto;
+      put(F.liters, values.liters, 'litre');
+      put(F.price, values.unitPrice, 'birim fiyat');
+      put(F.total, values.total, 'tutar');
+      put(F.station, values.station, 'istasyon');
+      if (values.fuel && [...F.fuel.options].some(o => o.value === values.fuel)) F.fuel.value = values.fuel;
+
+      const özet = [
+        values.liters != null ? U.liters(values.liters) : null,
+        values.unitPrice != null ? '₺' + U.n2.format(values.unitPrice) + '/L' : null,
+        values.total != null ? U.money(values.total) : null,
+        values.station || null
+      ].filter(Boolean).join(' · ');
+
+      msg.textContent = filled.length
+        ? `Okundu: ${özet} — ${filled.join(', ')} dolduruldu, kontrol et.` +
+          (warnings.length ? ' ' + warnings.join('. ') + '.' : '')
+        : `Okundu: ${özet || 'değer bulunamadı'}. Dolu alanlara dokunulmadı.` +
+          (warnings.length ? ' ' + warnings.join('. ') + '.' : '');
+      if (provider === 'apikey') msg.textContent += ' (kendi API anahtarınla)';
+      updateOdoHint();
+    } catch (err) {
+      const codes = {
+        not_granted: 'Claude erişimine izin verilmedi.',
+        rate_limited: 'Çok fazla istek oldu, biraz sonra dene.',
+        images_unavailable: 'Bu ortamda fotoğraf gönderilemiyor.',
+        image_rejected: 'Fotoğraf kabul edilmedi; daha küçük/net bir kare dene.',
+        cancelled: 'İptal edildi.'
+      };
+      msg.textContent = codes[err?.code] || err?.message || 'Fiş okunamadı';
+      thumb.hidden = true;
+    } finally {
+      row.classList.remove('busy');
+    }
+  });
+
+  /* ---------- Fiş okuma ayarları ---------- */
+
+  async function renderAiStatus() {
+    const kind = await Receipt.provider();
+    const el = $('#aiStatus');
+    el.classList.toggle('error', !kind);
+    el.textContent = kind === 'claude'
+      ? 'Hazır: fişler Claude bağlantısı üzerinden okunuyor, API anahtarı gerekmiyor.'
+      : kind === 'apikey'
+        ? 'Hazır: kendi API anahtarın kullanılıyor.'
+        : 'Şu an kapalı. Bu sayfayı claude.ai bağlantısından açtığında kendiliğinden çalışır; ' +
+          'başka bir yerde kullanacaksan aşağıya kendi API anahtarını gir.';
+    $('#receiptBtn').disabled = !kind;
+    $('#receiptRow').title = kind ? '' : 'Fiş okuma için Veri sekmesindeki ayarlara bak';
+  }
+
+  function loadAiSettings() {
+    const cfg = Receipt.settings();
+    $('#ai-key').value = cfg.apiKey;
+    $('#ai-model').value = cfg.model;
+    $('#ai-endpoint').value = cfg.endpoint;
+  }
+
+  $('#aiSaveBtn').addEventListener('click', () => {
+    Receipt.setSettings({
+      apiKey: $('#ai-key').value.trim(),
+      model: $('#ai-model').value.trim() || 'claude-opus-5',
+      endpoint: $('#ai-endpoint').value.trim() || 'https://api.anthropic.com/v1/messages'
+    });
+    loadAiSettings();
+    renderAiStatus();
+    toast('Fiş okuma ayarları kaydedildi');
+  });
+
+  $('#aiClearBtn').addEventListener('click', () => {
+    Receipt.setSettings({ apiKey: '' });
+    loadAiSettings();
+    renderAiStatus();
+    toast('Anahtar silindi');
+  });
+
+  /* ---------- Kilometre okumaları ---------- */
+
+  const K = { id: $('#k-id'), date: $('#k-date'), odo: $('#k-odo'), note: $('#k-note') };
+
+  function resetReadingForm() {
+    K.id.value = ''; K.date.value = U.todayISO(); K.odo.value = ''; K.note.value = '';
+    $('#readingSaveBtn').textContent = 'Kilometreyi kaydet';
+    $('#readingCancelBtn').hidden = true;
+    updateReadingHint();
+  }
+
+  function updateReadingHint() {
+    const prev = Store.lastOdoBefore(K.date.value, null);
+    const val = U.parseNumber(K.odo.value);
+    if (!prev) { $('#kOdoHint').textContent = 'İlk kilometre kaydı'; return; }
+    const base = `Son: ${U.n0.format(prev.odo)} km · ${U.dateLabel(prev.date)}`;
+    if (val == null) { $('#kOdoHint').textContent = base; return; }
+    const diff = val - prev.odo;
+    $('#kOdoHint').textContent = diff >= 0
+      ? `${base} · +${U.n0.format(diff)} km`
+      : `${base} · dikkat: ${U.n0.format(diff)} km (geriye gidiyor)`;
+  }
+  K.odo.addEventListener('input', updateReadingHint);
+  K.date.addEventListener('change', updateReadingHint);
+
+  $('#readingForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const odo = U.parseNumber(K.odo.value);
+    if (odo == null) return toast('Kilometre gir');
+    const prev = Store.lastOdoBefore(K.date.value, null);
+    if (prev && odo < prev.odo && !confirm(
+      `Girdiğin ${U.n0.format(odo)} km, ${U.dateLabel(prev.date)} tarihindeki ${U.n0.format(prev.odo)} km'den küçük. Yine de kaydedilsin mi?`)) return;
+    const editing = !!K.id.value;
+    Store.upsertReading({ id: K.id.value || undefined, date: K.date.value, odo: K.odo.value, note: K.note.value });
+    resetReadingForm();
+    renderAll();
+    toast(editing ? 'Okuma güncellendi' : 'Kilometre kaydedildi');
+  });
+
+  $('#readingCancelBtn').addEventListener('click', resetReadingForm);
+
+  function renderReadings() {
+    const list = Store.filterReadings(range).slice().reverse();
+    $('#readingListCard').hidden = list.length === 0;
+    if (!list.length) return;
+    $('#readingCountLabel').textContent = `${list.length} okuma`;
+    $('#readingList').innerHTML = list.map(x => `
+      <li data-id="${U.esc(x.id)}">
+        <div class="rec-main">${U.esc(U.n0.format(x.odo))} km</div>
+        <div class="rec-sub">${U.esc(U.dateLabel(x.date))}${x.note ? ' · ' + U.esc(x.note) : ''}</div>
+        <div class="rec-amount"></div>
+        <div class="rec-actions"><button class="k-edit">Düzenle</button><button class="k-del del">Sil</button></div>
+      </li>`).join('');
+  }
+
+  $('#readingList').addEventListener('click', e => {
+    const li = e.target.closest('li[data-id]');
+    if (!li) return;
+    const x = Store.readings().find(y => y.id === li.dataset.id);
+    if (!x) return;
+    if (e.target.classList.contains('k-edit')) {
+      K.id.value = x.id; K.date.value = x.date; K.odo.value = x.odo; K.note.value = x.note;
+      $('#readingSaveBtn').textContent = 'Okumayı güncelle';
+      $('#readingCancelBtn').hidden = false;
+      document.querySelector('#entryMode [data-mode="reading"]').click();
+      show('ekle');
+    } else if (e.target.classList.contains('k-del')) {
+      Store.removeReading(x.id);
+      renderAll();
+      toast('Okuma silindi', {
+        label: 'Geri al',
+        fn: () => { Store.upsertReading(x); renderAll(); toast('Geri alındı'); }
+      });
+    }
+  });
+
+  $('#odoNowBtn').addEventListener('click', () => {
+    show('ekle');
+    document.querySelector('#entryMode [data-mode="reading"]').click();
+    K.odo.focus();
+  });
+
+  /** Son kilometre noktası bir haftayı geçtiyse Özet'te hatırlatır. */
+  function renderOdoBanner() {
+    const days = Store.daysSinceOdometer();
+    const banner = $('#odoBanner');
+    const show8 = days != null && days >= 8;
+    banner.hidden = !show8;
+    if (show8) {
+      $('#odoBannerText').textContent =
+        `Son kilometre bilgisi ${days} gün önce. Haftada bir girersen aylık yol grafiği tahmine değil ölçüme dayanır.`;
+    }
+  }
 
   /* ---------- Araçlar ---------- */
 
@@ -510,6 +717,7 @@
 
   function resetForm() {
     F.id.value = ''; F.date.value = U.todayISO();
+    F.date.dataset.auto = '1';   // kullanıcı dokunmadı: fişteki tarih bunu ezebilir
     F.odo.value = ''; F.liters.value = ''; F.price.value = ''; F.total.value = '';
     F.station.value = ''; F.note.value = ''; F.full.checked = true;
     const last = Store.all().slice(-1)[0];
@@ -537,12 +745,13 @@
       : `${base} · dikkat: ${U.n0.format(diff)} km (geriye gidiyor)`;
   }
   F.odo.addEventListener('input', updateOdoHint);
-  F.date.addEventListener('change', updateOdoHint);
+  F.date.addEventListener('change', () => { delete F.date.dataset.auto; updateOdoHint(); });
 
   function editRecord(id) {
     const r = Store.all().find(x => x.id === id);
     if (!r) return;
     F.id.value = r.id; F.date.value = r.date;
+    delete F.date.dataset.auto;
     F.odo.value = r.odo ?? ''; F.liters.value = r.liters ?? '';
     F.price.value = r.unitPrice ?? ''; F.total.value = r.total ?? '';
     F.fuel.value = r.fuel; F.station.value = r.station;
@@ -902,6 +1111,9 @@
   Store.load();
   renderVehicles();
   resetExpenseForm();
+  resetReadingForm();
+  loadAiSettings();
+  renderAiStatus();
   resetVehicleForm();
   resetForm();
   renderAll();

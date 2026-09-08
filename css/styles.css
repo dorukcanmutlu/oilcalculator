@@ -137,6 +137,20 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .list-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .list-filters select { font-size: 13px; padding: 8px 10px; }
 .field-hint { color: var(--muted); font-size: 11px; min-height: 14px; }
+.receipt { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; }
+.receipt .btn { flex: 0 0 auto; }
+.receipt img { grid-row: 1 / span 2; grid-column: 2; justify-self: end; max-height: 54px; border-radius: 8px; border: 1px solid var(--line); }
+.receipt .hint { grid-column: 1 / -1; }
+.receipt.busy .btn { opacity: .6; pointer-events: none; }
+.filled { animation: fillFlash 1.8s ease-out; }
+@keyframes fillFlash {
+  from { background: color-mix(in srgb, var(--accent) 30%, var(--surface-2)); }
+  to { background: var(--surface-2); }
+}
+@media (prefers-reduced-motion: reduce) { .filled { animation: none; } }
+details summary { cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+details .field, details .grid, details .actions { margin-top: 8px; }
 .subbar {
   position: sticky; top: 0; z-index: 19;
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
@@ -177,7 +191,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); padding: 0 0 6px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-.segmented { display: grid; grid-auto-flow: column; gap: 6px; background: var(--surface-2); border-radius: 10px; padding: 4px; }
+.segmented { display: grid; grid-auto-flow: column; gap: 4px; background: var(--surface-2); border-radius: 10px; padding: 4px; }
 .segmented button {
   background: none; border: 0; padding: 9px 8px; border-radius: 8px;
   font-weight: 600; color: var(--muted); cursor: pointer;

@@ -26,7 +26,7 @@ export function makeEnv() {
   });
   ctx.globalThis = ctx;
 
-  for (const file of ['js/util.js', 'js/store.js', 'js/importer.js', 'js/xlsx-write.js']) {
+  for (const file of ['js/util.js', 'js/store.js', 'js/importer.js', 'js/xlsx-write.js', 'js/receipt.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), ctx, { filename: file });
   }
   return {
@@ -34,6 +34,7 @@ export function makeEnv() {
     Store: vm.runInContext('Store', ctx),
     Importer: vm.runInContext('Importer', ctx),
     XlsxWrite: vm.runInContext('XlsxWrite', ctx),
+    Receipt: vm.runInContext('Receipt', ctx),
     mem
   };
 }
